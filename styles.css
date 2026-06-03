@@ -145,6 +145,25 @@ h1 {
     outline: none;
 }
 
+.view-toggle-btn {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--primary);
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.view-toggle-btn:hover {
+    border-color: var(--primary);
+    background: #eef2ff;
+}
+
 .search-container {
     position: relative;
     flex: 1 1 280px;
@@ -278,6 +297,14 @@ button {
     gap: 10px;
     min-height: 0;
     overflow: auto;
+    padding: 2px;
+    border-radius: 8px;
+}
+
+.kanban-cards.drag-over {
+    outline: 2px dashed var(--primary);
+    outline-offset: 2px;
+    background: #eef2ff;
 }
 
 .kanban-card {
@@ -288,6 +315,10 @@ button {
     border-radius: 8px;
     background: #f8fafc;
     cursor: pointer;
+}
+
+.kanban-card.dragging {
+    opacity: 0.5;
 }
 
 .kanban-card:hover {
@@ -322,6 +353,115 @@ button {
     color: var(--muted);
     text-align: center;
     font-weight: 700;
+}
+
+.report-view {
+    display: grid;
+    gap: 16px;
+}
+
+.report-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.report-metrics article,
+.report-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.report-metrics article {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+}
+
+.report-metrics span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.report-metrics strong {
+    color: var(--text);
+    font-size: 1.2rem;
+    line-height: 1.25;
+}
+
+.report-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 16px;
+}
+
+.report-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-panel {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    min-width: 0;
+}
+
+.report-panel h2 {
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.report-table-wrap {
+    overflow: auto;
+}
+
+.sales-chart {
+    display: grid;
+    gap: 12px;
+}
+
+.sales-bar-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.8fr) minmax(120px, 1.2fr) minmax(90px, auto);
+    align-items: center;
+    gap: 10px;
+}
+
+.sales-label,
+.sales-value {
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.sales-value {
+    text-align: right;
+}
+
+.sales-bar-track {
+    height: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e2e8f0;
+}
+
+.sales-bar {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--primary);
+}
+
+.report-empty {
+    padding: 12px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-weight: 700;
+    text-align: center;
 }
 
 table {
@@ -421,39 +561,6 @@ td a {
     to {
         transform: rotate(360deg);
     }
-}
-
-#dropOverlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    margin: 20px;
-    border: 4px dashed var(--primary);
-    border-radius: 20px;
-    background: rgba(79, 70, 229, 0.2);
-    backdrop-filter: blur(4px);
-    pointer-events: none;
-}
-
-#dropOverlay.active {
-    display: flex;
-}
-
-.drop-message {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-    padding: 2rem 4rem;
-    border-radius: 8px;
-    background: #fff;
-    color: var(--primary);
-    text-align: center;
-    font-weight: 800;
-    box-shadow: 0 10px 40px rgba(15, 23, 42, 0.12);
 }
 
 .modal-mask {
@@ -708,5 +815,19 @@ td a {
 
     .kanban-board {
         grid-template-columns: 1fr;
+    }
+
+    .report-metrics,
+    .report-grid,
+    .report-grid-3 {
+        grid-template-columns: 1fr;
+    }
+
+    .sales-bar-row {
+        grid-template-columns: 1fr;
+    }
+
+    .sales-value {
+        text-align: left;
     }
 }

@@ -61,6 +61,12 @@ sR2Sh8e3h3Knd6j1tceRIFU=
             icon: "shield-check",
             headers: ["id", "ten_khach", "sdt", "dia_chi", "sp_can", "tinh_trang", "huong_xly", "ghi_chu"],
             textareaHeaders: ["huong_xly", "ghi_chu"]
+        },
+        BAO_CAO: {
+            label: "Báo cáo",
+            icon: "bar-chart-3",
+            headers: [],
+            reportOnly: true
         }
     }
 };
@@ -79,6 +85,7 @@ let dsSpOptions = [];
 let nppOptions = [];
 let currentDonHangMdh = "";
 let congViecView = "table";
+let reportData = null;
 
 function getModuleConfig(moduleName = currentModule) {
     return CONFIG.modules[moduleName] || CONFIG.modules.NPP;
@@ -224,30 +231,6 @@ function getHeaderIndex(header, moduleName = currentModule) {
     return getHeaders(moduleName).indexOf(header);
 }
 
-function getDonHangGroups(rows = filteredData) {
-    const mdhIndex = getHeaderIndex("mdh", "DON_HANG");
-    const nppIndex = getHeaderIndex("npp", "DON_HANG");
-    const thanhTienIndex = getHeaderIndex("thanh_tien", "DON_HANG");
-    const groups = new Map();
-    rows.forEach(row => {
-        const mdh = String(row[mdhIndex] || "").trim();
-        if (!mdh) return;
-        if (!groups.has(mdh)) {
-            groups.set(mdh, {
-                mdh,
-                npp: String(row[nppIndex] || "").trim(),
-                total: 0,
-                rows: []
-            });
-        }
-        const group = groups.get(mdh);
-        if (!group.npp) group.npp = String(row[nppIndex] || "").trim();
-        group.total += parseMoney(row[thanhTienIndex]);
-        group.rows.push(row);
-    });
-    return [...groups.values()];
-}
-
 async function sheetsFetch(path, options = {}) {
     const token = await getAccessToken();
     const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}${path}`, {
@@ -361,6 +344,119 @@ async function loadNppOptions() {
     return nppOptions;
 }
 
+async function loadModuleRows(moduleName) {
+    await ensureModuleSheet(moduleName);
+    const headers = getHeaders(moduleName);
+    if (!headers.length) return [];
+    const range = `${quoteSheetName(moduleName)}!A2:${colName(headers.length - 1)}`;
+    const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
+    return (data.values || []).map((row, index) => {
+        const normalized = headers.map((_, cellIndex) => String(row[cellIndex] ?? ""));
+        normalized._sheetRow = index + 2;
+        return normalized;
+    });
+}
+
+async function buildBaoCaoData() {
+    const [donHangRows, nppRows] = await Promise.all([
+        loadModuleRows("DON_HANG"),
+        loadModuleRows("NPP")
+    ]);
+    const donHangHeaders = getHeaders("DON_HANG");
+    const nppHeaders = getHeaders("NPP");
+    const nppNameById = new Map(nppRows.map(row => [
+        String(row[nppHeaders.indexOf("id")] || "").trim(),
+        String(row[nppHeaders.indexOf("ten")] || "").trim()
+    ]));
+    const nppIndex = donHangHeaders.indexOf("npp");
+    const ngayIndex = donHangHeaders.indexOf("ngay");
+    const idSpIndex = donHangHeaders.indexOf("id_sp");
+    const tenIndex = donHangHeaders.indexOf("ten");
+    const slgIndex = donHangHeaders.indexOf("slg");
+    const thanhTienIndex = donHangHeaders.indexOf("thanh_tien");
+    const filterDateFrom = document.getElementById("reportDateFrom")?.value || "";
+    const filterDateTo = document.getElementById("reportDateTo")?.value || "";
+    const filterNpp = String(document.getElementById("reportNpp")?.value || "").trim().toLowerCase();
+    const filterIdSp = String(document.getElementById("reportIdSp")?.value || "").trim().toLowerCase();
+    const fromTime = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : 0;
+    const toTime = filterDateTo ? new Date(`${filterDateTo}T23:59:59`).getTime() : 0;
+    const skuSet = new Set();
+    const nppSales = new Map();
+    const skuSales = new Map();
+    const dateSales = new Map();
+    let totalSales = 0;
+    let totalQuantity = 0;
+
+    donHangRows.forEach(row => {
+        const npp = String(row[nppIndex] || "").trim() || "Không có NPP";
+        const ngay = String(row[ngayIndex] || "").trim();
+        const idSp = String(row[idSpIndex] || "").trim();
+        const productName = String(row[tenIndex] || "").trim();
+        const rowTime = getDateTime(ngay);
+        if (fromTime && rowTime < fromTime) return;
+        if (toTime && rowTime > toTime) return;
+        if (filterNpp && npp.toLowerCase() !== filterNpp) return;
+        if (filterIdSp && idSp.toLowerCase() !== filterIdSp) return;
+        const quantity = parseMoney(row[slgIndex]);
+        const sales = parseMoney(row[thanhTienIndex]);
+        totalSales += sales;
+        totalQuantity += quantity;
+        if (idSp) skuSet.add(idSp);
+        if (!nppSales.has(npp)) {
+            nppSales.set(npp, {
+                npp,
+                nppName: nppNameById.get(npp) || "",
+                sales: 0,
+                quantity: 0,
+                sku: new Map()
+            });
+        }
+        const entry = nppSales.get(npp);
+        entry.sales += sales;
+        entry.quantity += quantity;
+        if (idSp) {
+            if (!entry.sku.has(idSp)) {
+                entry.sku.set(idSp, { idSp, productName, quantity: 0, sales: 0 });
+            }
+            const sku = entry.sku.get(idSp);
+            sku.quantity += quantity;
+            sku.sales += sales;
+        }
+        if (idSp) {
+            if (!skuSales.has(idSp)) {
+                skuSales.set(idSp, { idSp, productName, quantity: 0, sales: 0 });
+            }
+            const skuEntry = skuSales.get(idSp);
+            skuEntry.quantity += quantity;
+            skuEntry.sales += sales;
+            if (!skuEntry.productName && productName) skuEntry.productName = productName;
+        }
+        if (ngay) {
+            if (!dateSales.has(ngay)) dateSales.set(ngay, { ngay, quantity: 0, sales: 0 });
+            const dateEntry = dateSales.get(ngay);
+            dateEntry.quantity += quantity;
+            dateEntry.sales += sales;
+        }
+    });
+
+    const nppRowsReport = [...nppSales.values()]
+        .map(entry => ({
+            ...entry,
+            bestSku: [...entry.sku.values()].sort((a, b) => b.quantity - a.quantity || b.sales - a.sales)[0] || null
+        }))
+        .sort((a, b) => b.sales - a.sales);
+
+    return {
+        totalSales,
+        totalQuantity,
+        totalSku: skuSet.size,
+        bestNpp: nppRowsReport[0] || null,
+        nppRows: nppRowsReport,
+        skuRows: [...skuSales.values()].sort((a, b) => b.sales - a.sales),
+        dateRows: [...dateSales.values()].sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay))
+    };
+}
+
 function renderTabs() {
     const tabs = document.getElementById("tabs");
     tabs.innerHTML = Object.entries(CONFIG.modules).map(([moduleName, config]) => `
@@ -372,17 +468,46 @@ function renderTabs() {
     lucide.createIcons();
 }
 
+function updateModuleActions() {
+    const uploadBtn = document.getElementById("uploadBtn");
+    const addBtn = document.getElementById("addBtn");
+    const searchContainer = document.querySelector(".search-container");
+    const isReport = getModuleConfig().reportOnly;
+    if (uploadBtn) uploadBtn.style.display = currentModule === "CONG_VIEC" || isReport ? "none" : "flex";
+    if (addBtn) addBtn.style.display = isReport ? "none" : "flex";
+    if (searchContainer) searchContainer.style.display = isReport ? "none" : "block";
+}
+
 async function switchModule(moduleName) {
     currentModule = CONFIG.modules[moduleName] ? moduleName : "NPP";
     try { sessionStorage.setItem(MODULE_STORAGE_KEY, currentModule); } catch (_) { }
     document.getElementById("searchInput").value = "";
     document.getElementById("sheetName").innerText = currentModule;
     renderTabs();
+    updateModuleActions();
     await renderFilterPanel();
     await fetchData();
 }
 
 async function fetchData() {
+    if (getModuleConfig().reportOnly) {
+        showLoading("Đang tải báo cáo...");
+        try {
+            reportData = await buildBaoCaoData();
+            filteredData = [];
+            allData = [];
+            currentPage = 1;
+            renderHeaders();
+            renderTable();
+        } catch (err) {
+            console.error(err);
+            alert("Không thể tải báo cáo: " + err.message);
+        } finally {
+            hideLoading();
+        }
+        return;
+    }
+
     const headers = getHeaders();
     showLoading(`Đang tải dữ liệu ${currentModule}...`);
     try {
@@ -410,6 +535,19 @@ async function fetchData() {
 
 async function renderFilterPanel() {
     const panel = document.getElementById("filterPanel");
+    if (getModuleConfig().reportOnly) {
+        await loadNppOptions();
+        panel.innerHTML = `
+            <label><span>Từ ngày</span><input id="reportDateFrom" type="date" onchange="fetchData()"></label>
+            <label><span>Tới ngày</span><input id="reportDateTo" type="date" onchange="fetchData()"></label>
+            <label><span>NPP</span><select id="reportNpp" onchange="fetchData()">
+                <option value="">Tất cả NPP</option>
+                ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
+            </select></label>
+            <label><span>ID_SP</span><input id="reportIdSp" type="text" placeholder="Lọc ID_SP..." oninput="fetchData()"></label>
+        `;
+        return;
+    }
     if (currentModule === "DON_HANG") {
         await loadNppOptions();
         panel.innerHTML = `
@@ -462,6 +600,13 @@ function getDateTime(value) {
     return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
+function sortFilteredDataByNgayDesc() {
+    if (!["DON_HANG", "CONG_VIEC"].includes(currentModule)) return;
+    const ngayIndex = getHeaderIndex("ngay", currentModule);
+    if (ngayIndex < 0) return;
+    filteredData.sort((a, b) => getDateTime(b[ngayIndex]) - getDateTime(a[ngayIndex]));
+}
+
 function applyCurrentFilters() {
     const term = document.getElementById("searchInput")?.value.trim().toLowerCase() || "";
     const dateFrom = document.getElementById("filterDateFrom")?.value || "";
@@ -501,15 +646,28 @@ function applyCurrentFilters() {
 
         return true;
     });
+    sortFilteredDataByNgayDesc();
 }
 
 function renderHeaders() {
     const head = document.getElementById("tableHead");
-    const headers = currentModule === "DON_HANG" ? ["MDH", "NPP", "TONG_TIEN"] : getHeaders();
+    if (getModuleConfig().reportOnly) {
+        head.innerHTML = "";
+        return;
+    }
+    const headers = getHeaders();
     head.innerHTML = `<tr>${headers.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join("")}</tr>`;
 }
 
 function renderTable() {
+    if (getModuleConfig().reportOnly) {
+        document.getElementById("tableWrapper").style.display = "none";
+        document.getElementById("kanbanBoard").style.display = "none";
+        renderBaoCao();
+        renderPagination();
+        return;
+    }
+    document.getElementById("reportView")?.remove();
     const showKanban = currentModule === "CONG_VIEC" && congViecView === "kanban";
     document.getElementById("tableWrapper").style.display = showKanban ? "none" : "block";
     document.getElementById("kanbanBoard").style.display = showKanban ? "grid" : "none";
@@ -520,25 +678,8 @@ function renderTable() {
     }
 
     const tbody = document.getElementById("tableBody");
-    if (currentModule === "DON_HANG") {
-        const groups = getDonHangGroups();
-        const start = (currentPage - 1) * rowsPerPage;
-        const pageData = groups.slice(start, start + rowsPerPage);
-        tbody.innerHTML = pageData.map(group => `
-            <tr ondblclick="openDonHangForm('${escapeJsString(group.mdh)}')">
-                <td>${escapeHtml(group.mdh)}</td>
-                <td>${escapeHtml(group.npp)}</td>
-                <td>${escapeHtml(formatDisplayNumber(group.total))}</td>
-            </tr>
-        `).join("");
-        if (!pageData.length) {
-            tbody.innerHTML = `<tr><td colspan="3">Chưa có dữ liệu.</td></tr>`;
-        }
-        renderPagination();
-        return;
-    }
-
     const headers = getHeaders();
+    const mdhIndex = headers.indexOf("mdh");
     const start = (currentPage - 1) * rowsPerPage;
     const pageData = filteredData.slice(start, start + rowsPerPage);
     tbody.innerHTML = pageData.map((row, rowIndex) => {
@@ -551,12 +692,164 @@ function renderTable() {
             const displayValue = isNumericHeader(header) ? formatDisplayNumber(value) : value;
             return `<td>${escapeHtml(displayValue)}</td>`;
         }).join("");
-        return `<tr ondblclick="openRecordForm(${start + rowIndex})">${cells}</tr>`;
+        const action = currentModule === "DON_HANG"
+            ? `openDonHangForm('${escapeJsString(row[mdhIndex] || "")}')`
+            : `openRecordForm(${start + rowIndex})`;
+        return `<tr ondblclick="${action}">${cells}</tr>`;
     }).join("");
     if (!pageData.length) {
         tbody.innerHTML = `<tr><td colspan="${headers.length}">Chưa có dữ liệu.</td></tr>`;
     }
     renderPagination();
+}
+
+function renderBaoCao() {
+    document.getElementById("reportView")?.remove();
+    const data = reportData || { totalSales: 0, totalQuantity: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
+    const maxSales = Math.max(...data.nppRows.map(row => row.sales), 1);
+    const bestNppText = data.bestNpp
+        ? `${data.bestNpp.npp}${data.bestNpp.nppName ? ` - ${data.bestNpp.nppName}` : ""}`
+        : "Chưa có dữ liệu";
+    const report = document.createElement("section");
+    report.id = "reportView";
+    report.className = "report-view";
+    report.innerHTML = `
+        <div class="report-metrics">
+            <article>
+                <span>Doanh số tổng</span>
+                <strong>${escapeHtml(formatDisplayNumber(data.totalSales))}</strong>
+            </article>
+            <article>
+                <span>Số lượng bán</span>
+                <strong>${escapeHtml(formatDisplayNumber(data.totalQuantity))}</strong>
+            </article>
+            <article>
+                <span>Số lượng SKU bán ra</span>
+                <strong>${escapeHtml(formatDisplayNumber(data.totalSku))}</strong>
+            </article>
+            <article>
+                <span>NPP doanh số cao nhất</span>
+                <strong>${escapeHtml(bestNppText)}</strong>
+            </article>
+        </div>
+        <div class="report-grid">
+            <section class="report-panel">
+                <h2>Mã bán tốt nhất theo NPP</h2>
+                <div class="report-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>NPP</th>
+                                <th>MÃ BÁN TỐT NHẤT</th>
+                                <th>TÊN</th>
+                                <th>SLG</th>
+                                <th>DOANH SỐ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.nppRows.map(row => `
+                                <tr>
+                                    <td>${escapeHtml(row.npp)}${row.nppName ? ` - ${escapeHtml(row.nppName)}` : ""}</td>
+                                    <td>${escapeHtml(row.bestSku?.idSp || "")}</td>
+                                    <td>${escapeHtml(row.bestSku?.productName || "")}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.bestSku?.quantity || 0))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.bestSku?.sales || 0))}</td>
+                                </tr>
+                            `).join("") || `<tr><td colspan="5">Chưa có dữ liệu.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="report-panel">
+                <h2>Biểu đồ doanh số NPP</h2>
+                <div class="sales-chart">
+                    ${data.nppRows.map(row => `
+                        <div class="sales-bar-row">
+                            <div class="sales-label">${escapeHtml(row.npp)}${row.nppName ? ` - ${escapeHtml(row.nppName)}` : ""}</div>
+                            <div class="sales-bar-track">
+                                <div class="sales-bar" style="width:${Math.max((row.sales / maxSales) * 100, 2)}%"></div>
+                            </div>
+                            <div class="sales-value">${escapeHtml(formatDisplayNumber(row.sales))}</div>
+                        </div>
+                    `).join("") || `<div class="report-empty">Chưa có dữ liệu doanh số.</div>`}
+                </div>
+            </section>
+        </div>
+        <div class="report-grid report-grid-3">
+            <section class="report-panel">
+                <h2>Bảng NPP</h2>
+                <div class="report-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>NPP</th>
+                                <th>SLG</th>
+                                <th>TIỀN</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.nppRows.map(row => `
+                                <tr>
+                                    <td>${escapeHtml(row.npp)}${row.nppName ? ` - ${escapeHtml(row.nppName)}` : ""}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.quantity))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                                </tr>
+                            `).join("") || `<tr><td colspan="3">Chưa có dữ liệu.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="report-panel">
+                <h2>Bảng ID_SP</h2>
+                <div class="report-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID_SP</th>
+                                <th>TÊN</th>
+                                <th>SLG</th>
+                                <th>TIỀN</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.skuRows.map(row => `
+                                <tr>
+                                    <td>${escapeHtml(row.idSp)}</td>
+                                    <td>${escapeHtml(row.productName)}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.quantity))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                                </tr>
+                            `).join("") || `<tr><td colspan="4">Chưa có dữ liệu.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="report-panel">
+                <h2>Bảng ngày</h2>
+                <div class="report-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>NGÀY</th>
+                                <th>SLG</th>
+                                <th>TIỀN</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.dateRows.map(row => `
+                                <tr>
+                                    <td>${escapeHtml(row.ngay)}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.quantity))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                                </tr>
+                            `).join("") || `<tr><td colspan="3">Chưa có dữ liệu.</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    `;
+    document.querySelector(".main-content").insertBefore(report, document.getElementById("pagination"));
 }
 
 function renderCongViecKanban() {
@@ -599,7 +892,11 @@ function renderCongViecKanban() {
 }
 
 function renderPagination() {
-    const totalRows = currentModule === "DON_HANG" ? getDonHangGroups().length : filteredData.length;
+    if (getModuleConfig().reportOnly) {
+        document.getElementById("pagination").innerHTML = "";
+        return;
+    }
+    const totalRows = filteredData.length;
     if (currentModule === "CONG_VIEC" && congViecView === "kanban") {
         document.getElementById("pagination").innerHTML = "";
         return;
@@ -623,7 +920,7 @@ function renderPagination() {
 }
 
 function changePage(delta) {
-    const totalRows = currentModule === "DON_HANG" ? getDonHangGroups().length : filteredData.length;
+    const totalRows = filteredData.length;
     const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
     currentPage = Math.min(Math.max(currentPage + delta, 1), totalPages);
     renderTable();
@@ -634,6 +931,57 @@ function filterTable() {
     applyCurrentFilters();
     currentPage = 1;
     renderTable();
+}
+
+function dragCongViecCard(event) {
+    const card = event.currentTarget;
+    card.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", card.dataset.sheetRow || "");
+}
+
+function endCongViecDrag(event) {
+    event.currentTarget.classList.remove("dragging");
+    document.querySelectorAll(".kanban-cards.drag-over").forEach(item => item.classList.remove("drag-over"));
+}
+
+function allowKanbanDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add("drag-over");
+    event.dataTransfer.dropEffect = "move";
+}
+
+function clearKanbanDrop(event) {
+    event.currentTarget.classList.remove("drag-over");
+}
+
+async function dropCongViecCard(event) {
+    event.preventDefault();
+    const target = event.currentTarget;
+    target.classList.remove("drag-over");
+    const sheetRow = Number(event.dataTransfer.getData("text/plain"));
+    const nextStatus = String(target.dataset.kanbanStatus || "").trim();
+    if (!sheetRow || !nextStatus) return;
+
+    const row = allData.find(item => item._sheetRow === sheetRow);
+    if (!row) return;
+    const statusIndex = getHeaderIndex("tinh_trang", "CONG_VIEC");
+    if (String(row[statusIndex] || "").trim().toLowerCase() === nextStatus.toLowerCase()) return;
+
+    const updatedRow = [...row];
+    updatedRow[statusIndex] = nextStatus;
+    showLoading("Đang cập nhật tình trạng công việc...");
+    try {
+        await writeRecordRow(updatedRow, sheetRow);
+        row[statusIndex] = nextStatus;
+        applyCurrentFilters();
+        renderTable();
+    } catch (err) {
+        console.error(err);
+        alert("Không cập nhật được tình trạng công việc: " + err.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 async function writeRecordRow(row, sheetRow) {
@@ -1099,24 +1447,6 @@ async function processFiles(files) {
     }
 }
 
-function initDragAndDrop() {
-    const overlay = document.getElementById("dropOverlay");
-    window.addEventListener("dragover", event => {
-        event.preventDefault();
-        overlay.classList.add("active");
-    });
-    window.addEventListener("dragleave", event => {
-        if (event.relatedTarget === null) overlay.classList.remove("active");
-    });
-    window.addEventListener("drop", event => {
-        event.preventDefault();
-        overlay.classList.remove("active");
-        if (event.dataTransfer.files.length > 0) {
-            processFiles(Array.from(event.dataTransfer.files));
-        }
-    });
-}
-
 function initModalDismiss() {
     const modalMask = document.getElementById("productModal");
     modalMask.addEventListener("mousedown", event => {
@@ -1136,10 +1466,12 @@ async function init() {
     try {
         const saved = sessionStorage.getItem(MODULE_STORAGE_KEY);
         if (CONFIG.modules[saved]) currentModule = saved;
+        const savedCongViecView = sessionStorage.getItem("kieuDucCongViecView");
+        if (["table", "kanban"].includes(savedCongViecView)) congViecView = savedCongViecView;
     } catch (_) { }
     renderTabs();
+    updateModuleActions();
     lucide.createIcons();
-    initDragAndDrop();
     initModalDismiss();
     await renderFilterPanel();
     await fetchData();
