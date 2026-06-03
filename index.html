@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>kiều đức</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/10.5.25/jsrsasign-all-min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="loading" class="loading-mask">
+        <div class="spinner"></div>
+        <p>Đang tải dữ liệu...</p>
+    </div>
+
+    <div id="dropOverlay">
+        <div class="drop-message">
+            <i data-lucide="upload-cloud" style="width: 48px; height: 48px;"></i>
+            Thả file vào đây để tải dữ liệu lên module hiện tại
+        </div>
+    </div>
+
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <div id="brandText" class="logo">KIỀU<br>ĐỨC</div>
+                    <div>
+                        <h1 id="pageTitle">kiều đức</h1>
+                        <p id="sheetName" class="sheet-name">NPP</p>
+                    </div>
+                </div>
+            </div>
+            <div id="tabs" class="tabs"></div>
+        </aside>
+
+        <main class="main-content">
+            <div class="header-container">
+                <div id="headerActions">
+                    <div class="search-container">
+                        <i data-lucide="search" class="search-icon" style="width: 18px;"></i>
+                        <input type="text" id="searchInput" class="search-input" placeholder="Tìm kiếm nhanh..."
+                            oninput="filterTable()">
+                    </div>
+                    <button id="reloadBtn" type="button" onclick="fetchData()">
+                        <i data-lucide="refresh-cw" style="width:18px;"></i> Load lại
+                    </button>
+                    <button id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+                        <i data-lucide="upload" style="width:18px;"></i> Tải dữ liệu lên
+                    </button>
+                    <button id="addBtn" type="button" onclick="openRecordForm()">
+                        <i data-lucide="plus" style="width:18px;"></i> Thêm mới
+                    </button>
+                    <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
+                </div>
+                <div id="filterPanel" class="filter-panel"></div>
+            </div>
+
+            <div class="table-wrapper" id="tableWrapper">
+                <table id="dataTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div id="kanbanBoard" class="kanban-board"></div>
+
+            <div id="pagination" class="pagination"></div>
+        </main>
+    </div>
+
+    <div class="modal-mask" id="productModal">
+        <form class="modal" onsubmit="saveRecordFromForm(event)">
+            <div class="modal-header">
+                <h2 id="productModalTitle">Thêm mới</h2>
+                <button type="button" class="icon-btn" onclick="closeProductForm()" title="Đóng">
+                    <i data-lucide="x" style="width:18px;"></i>
+                </button>
+            </div>
+            <input type="hidden" id="editingSheetRow">
+            <div id="formFields" class="form-fields"></div>
+            <div class="modal-actions">
+                <button id="deleteBtn" type="button" class="danger-btn" onclick="deleteCurrentRecord()">
+                    <i data-lucide="trash-2" style="width:16px;"></i> Xóa
+                </button>
+                <div class="modal-actions-right">
+                    <button type="button" class="secondary-btn" onclick="closeProductForm()">Hủy</button>
+                    <button type="submit" class="primary-btn">Lưu</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,1148 @@
+const CONFIG = {
+    appName: "kiều đức",
+    spreadsheetId: "1_ts4WHe5OdZzsLwenoNCwFhQ9bOG6bI3dsxQLSidAFU",
+    serviceAccountEmail: "test-gia-ason@api-test-sheet-161.iam.gserviceaccount.com",
+    privateKey: `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC3NN84hLTkQPZd
+Lj7niXZTICq7nHsuTn3J6r2Paq12m70/lYSmrwh1i0EStr9bO19QM8cevGlslwGr
+WSVOLJlc6+w1HGPKvRXtA41kYV9MYIvpzIPQtkFE7Hxq71QyBARcv39Lfzze6Ioj
+3G8VBvAKFLAnCUr97GHRv+KbCTFxPZupd3PEB+xS5ZUlzdBCEZvDid3iXaaEJJ+l
+Td1apAGQHjtnDTLOkiTa8zf7X5ebALwnI9MziOdN8VyprHXGhkachPbKyrG0QwEs
+2jtiI6Y5ULsBPjNefoavH8MKU5DEAT9h0fZ7KfsKYVMDuXqmEKBs0D3B4Z6aDZQW
+wT2dDRZDAgMBAAECggEAEIuVoSzZVuFhaz1GI9ji0IacjvO50cIq7M8Zrj4/F756
+Ew6PIhKENafAb7U4INm2AnzUMO8CqL9Jpxs85qUM3W4JysSByqLUiRW2184amIyb
+j7jCXfLBTQn8AbHgrUepl5d/vBmFYMgon/mqjbNiGDb4FZgEQSkie5o6fi/dWp5d
+NahbZl+WTOB/znhAfKh/zferHNxldR/ERmwOubZUerkqysWiBigc3ovpLSUof9ur
+z3hNPPp0CKQjF40xuQc6FYTHUHMLuMvp78PXuc/mYqQmZ8VOGhU+faGtZ4m+QJly
+dF5dS8U5cwKEF+ptuAUiWSahn6INb9yKn3+FcsW0UQKBgQDb8N4eWFvbgpRo/vxo
+wBN2u2TWubj6clcrq/1a+VR0njC28Can0ogJHhrFhPxVs5D/rugs3HlbyAXJFptY
+V0DZPCwBxGU5P5RbGjXWWEUXjp4ISKQD8WKfVlXNr79TqLdOg2NZBYQAi06Cpo/T
+PV9l7LSG2Tj/9WdvD7W2wvrpaQKBgQDVPjpJN6xh7+sHtSU0mjKvrqigpHbuSQ/o
+XpUaWSIpJffm5QpFPAOcTT5mHZCyllicJQIrfPSY+sH8n+sF03CUqVkV4Q2UqfOf
+pFaLDB4P6SQ8iesZyF4VKFrj/cAvRJmp0e5W/DRnFkoEp+8c+nrru2+Dzm9kb7Uq
+0CiltqYAywKBgBtcfrV1to+7Ue0x84KwintV2rifyDRX7yI+tjkQFYKgf1zyyUxN
+c6D2vsvdvGqI+TvlrXqPPwW8/4NBrbeyux2LT8o0fYc+sp0WyKXOu2Gv21caelUH
+PYam/eultn6Y2Z0J2V0kw4Qx0GWOhQv5cZnDdb3k3iNxixmU8b03ynEpAoGBAKEA
+7O0fNe50QRZ+tOq0ihSPYQ55XrqnO3WNBDLynZJH8pbI1CpWF7vJrpVXOUs9rQWo
+A61mGR/wJMtiywaJEHWOL48PbzuR3jno0NcHfSMyOoPi9jlvSWncIFQH4TVPLF5F
+/Rh8L+ytrZE6YpWUoX6e9KGmGgDRPw5mQGpuL4RlAoGADe9n080SXlsUk4nHVjUz
+Efv7EBoBkgOpqb9T1foRfJl46NxmmTOYV3iGIhjwcDskEg284k4iq/gH6EEFyEBc
+Vz13jzB1nBgjfezFesVQz7bA/+Wik6HZtxAxVg38BKMt+Q1tYw9wOjbGPqOn++VC
+sR2Sh8e3h3Knd6j1tceRIFU=
+-----END PRIVATE KEY-----`,
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    modules: {
+        NPP: {
+            label: "NPP",
+            icon: "building-2",
+            headers: ["id", "ten", "sdt", "dia_chi", "ngay_sinh"]
+        },
+        DON_HANG: {
+            label: "Đơn hàng",
+            icon: "shopping-cart",
+            headers: ["id", "ngay", "mdh", "npp", "id_sp", "ten", "don_gia", "slg", "thanh_tien"],
+            numericHeaders: ["don_gia", "slg", "thanh_tien"]
+        },
+        CONG_VIEC: {
+            label: "Công việc",
+            icon: "clipboard-list",
+            headers: ["id", "ngay", "cong_viec", "noi_dung", "ghi_chu", "anh", "link", "tinh_trang", "trang_thai"],
+            textareaHeaders: ["noi_dung", "ghi_chu"],
+            statusOptions: ["chưa làm", "đang làm", "hoàn thành", "hủy"]
+        },
+        DS_SP: {
+            label: "DS SP",
+            icon: "package",
+            headers: ["id", "ten_sp", "gia_ban", "gia_km"],
+            numericHeaders: ["gia_ban", "gia_km"]
+        },
+        BAO_HANH: {
+            label: "Bảo hành",
+            icon: "shield-check",
+            headers: ["id", "ten_khach", "sdt", "dia_chi", "sp_can", "tinh_trang", "huong_xly", "ghi_chu"],
+            textareaHeaders: ["huong_xly", "ghi_chu"]
+        }
+    }
+};
+
+const MODULE_STORAGE_KEY = "kieuDucActiveModule";
+
+let accessToken = null;
+let tokenExpiry = 0;
+let spreadsheetSheets = new Map();
+let currentModule = "NPP";
+let allData = [];
+let filteredData = [];
+let currentPage = 1;
+let rowsPerPage = 150;
+let dsSpOptions = [];
+let nppOptions = [];
+let currentDonHangMdh = "";
+let congViecView = "table";
+
+function getModuleConfig(moduleName = currentModule) {
+    return CONFIG.modules[moduleName] || CONFIG.modules.NPP;
+}
+
+function getHeaders(moduleName = currentModule) {
+    return getModuleConfig(moduleName).headers;
+}
+
+async function getAccessToken() {
+    if (accessToken && Date.now() < tokenExpiry - 300000) return accessToken;
+    const header = { alg: "RS256", typ: "JWT" };
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+        iss: CONFIG.serviceAccountEmail,
+        scope: "https://www.googleapis.com/auth/spreadsheets",
+        aud: CONFIG.tokenUrl,
+        exp: now + 3600,
+        iat: now
+    };
+    const jwt = KJUR.jws.JWS.sign("RS256", JSON.stringify(header), JSON.stringify(payload), CONFIG.privateKey);
+    const res = await fetch(CONFIG.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error_description || data.error || "Không lấy được quyền truy cập Google Sheets.");
+    accessToken = data.access_token;
+    tokenExpiry = Date.now() + (data.expires_in * 1000);
+    return accessToken;
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function escapeJsString(value) {
+    return String(value ?? "")
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'")
+        .replace(/\r/g, "\\r")
+        .replace(/\n/g, "\\n");
+}
+
+function colName(index) {
+    let name = "";
+    let num = index + 1;
+    while (num > 0) {
+        const rem = (num - 1) % 26;
+        name = String.fromCharCode(65 + rem) + name;
+        num = Math.floor((num - 1) / 26);
+    }
+    return name;
+}
+
+function quoteSheetName(name) {
+    return `'${String(name).replace(/'/g, "''")}'`;
+}
+
+function showLoading(message = "Đang tải dữ liệu...") {
+    document.getElementById("loading").style.display = "flex";
+    document.querySelector("#loading p").innerText = message;
+}
+
+function hideLoading() {
+    document.getElementById("loading").style.display = "none";
+}
+
+function parseMoney(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const raw = String(value ?? "").trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(/\s/g, "").replace(/[^\d,.-]/g, "");
+    if (!normalized) return 0;
+    if (normalized.includes(",") && normalized.includes(".")) {
+        return Number(normalized.lastIndexOf(",") > normalized.lastIndexOf(".")
+            ? normalized.replace(/\./g, "").replace(",", ".")
+            : normalized.replace(/,/g, "")) || 0;
+    }
+    if (/^-?\d{1,3}([.,]\d{3})+$/.test(normalized)) return Number(normalized.replace(/[.,]/g, "")) || 0;
+    return Number(normalized.replace(",", ".")) || 0;
+}
+
+function formatDisplayNumber(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(parseMoney(raw));
+}
+
+function isNumericHeader(header) {
+    return (getModuleConfig().numericHeaders || []).includes(header);
+}
+
+function normalizeRow(row) {
+    return getHeaders().map((header, index) => {
+        const value = String(row?.[index] ?? "").trim();
+        return isNumericHeader(header) && value ? parseMoney(value) : value;
+    });
+}
+
+function getRowId(row) {
+    return String(row?.[0] || "").trim();
+}
+
+function generateNextId(extraIds = []) {
+    const ids = [...allData.map(getRowId), ...extraIds].filter(Boolean);
+    const numericIds = ids.map(id => Number(id)).filter(Number.isFinite);
+    if (numericIds.length === ids.length && numericIds.length) return String(Math.max(...numericIds) + 1);
+    const now = new Date();
+    const stamp = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+        String(now.getHours()).padStart(2, "0"),
+        String(now.getMinutes()).padStart(2, "0"),
+        String(now.getSeconds()).padStart(2, "0")
+    ].join("");
+    let candidate = `${currentModule}-${stamp}`;
+    let suffix = 1;
+    while (ids.includes(candidate)) {
+        suffix += 1;
+        candidate = `${currentModule}-${stamp}-${suffix}`;
+    }
+    return candidate;
+}
+
+function randomCode(length = 10) {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let value = "";
+    for (let index = 0; index < length; index += 1) {
+        value += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return value;
+}
+
+function getHeaderIndex(header, moduleName = currentModule) {
+    return getHeaders(moduleName).indexOf(header);
+}
+
+function getDonHangGroups(rows = filteredData) {
+    const mdhIndex = getHeaderIndex("mdh", "DON_HANG");
+    const nppIndex = getHeaderIndex("npp", "DON_HANG");
+    const thanhTienIndex = getHeaderIndex("thanh_tien", "DON_HANG");
+    const groups = new Map();
+    rows.forEach(row => {
+        const mdh = String(row[mdhIndex] || "").trim();
+        if (!mdh) return;
+        if (!groups.has(mdh)) {
+            groups.set(mdh, {
+                mdh,
+                npp: String(row[nppIndex] || "").trim(),
+                total: 0,
+                rows: []
+            });
+        }
+        const group = groups.get(mdh);
+        if (!group.npp) group.npp = String(row[nppIndex] || "").trim();
+        group.total += parseMoney(row[thanhTienIndex]);
+        group.rows.push(row);
+    });
+    return [...groups.values()];
+}
+
+async function sheetsFetch(path, options = {}) {
+    const token = await getAccessToken();
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}${path}`, {
+        ...options,
+        headers: {
+            Authorization: `Bearer ${token}`,
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...(options.headers || {})
+        }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error?.message || "Lỗi Google Sheets API.");
+    return data;
+}
+
+async function loadSpreadsheetSheets() {
+    const data = await sheetsFetch("?fields=sheets.properties");
+    spreadsheetSheets = new Map((data.sheets || []).map(sheet => [
+        sheet.properties.title,
+        {
+            sheetId: sheet.properties.sheetId,
+            title: sheet.properties.title
+        }
+    ]));
+}
+
+async function batchUpdate(requests) {
+    return sheetsFetch(":batchUpdate", {
+        method: "POST",
+        body: JSON.stringify({ requests })
+    });
+}
+
+async function ensureModuleSheet(moduleName = currentModule) {
+    if (!spreadsheetSheets.size) await loadSpreadsheetSheets();
+    if (!spreadsheetSheets.has(moduleName)) {
+        await batchUpdate([{ addSheet: { properties: { title: moduleName } } }]);
+        await loadSpreadsheetSheets();
+    }
+    await ensureModuleHeaders(moduleName);
+}
+
+async function ensureModuleHeaders(moduleName = currentModule) {
+    const expectedHeaders = getHeaders(moduleName);
+    const range = `${quoteSheetName(moduleName)}!A1:${colName(expectedHeaders.length - 1)}1`;
+    const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
+    const currentHeaders = data.values?.[0] || [];
+    const needsHeader = expectedHeaders.some((header, index) => String(currentHeaders[index] || "").trim() !== header);
+    if (!needsHeader) return;
+    if (currentHeaders.some(header => String(header || "").trim())) {
+        const currentEndCol = colName(Math.max(currentHeaders.length, expectedHeaders.length) - 1);
+        const oldDataRange = `${quoteSheetName(moduleName)}!A2:${currentEndCol}`;
+        const oldData = await sheetsFetch(`/values/${encodeURIComponent(oldDataRange)}`);
+        const oldHeaders = currentHeaders.map(header => String(header || "").trim());
+        const remappedRows = (oldData.values || []).map(row => expectedHeaders.map(header => {
+            const oldIndex = oldHeaders.indexOf(header);
+            return oldIndex >= 0 ? row[oldIndex] ?? "" : "";
+        }));
+        await sheetsFetch(`/values/${encodeURIComponent(`${quoteSheetName(moduleName)}!A1:${currentEndCol}`)}:clear`, {
+            method: "POST",
+            body: JSON.stringify({})
+        });
+        await sheetsFetch(`/values/${encodeURIComponent(`${quoteSheetName(moduleName)}!A1`)}?valueInputOption=RAW`, {
+            method: "PUT",
+            body: JSON.stringify({ values: [expectedHeaders, ...remappedRows] })
+        });
+        return;
+    }
+    await sheetsFetch(`/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+        method: "PUT",
+        body: JSON.stringify({ values: [expectedHeaders] })
+    });
+}
+
+async function loadDsSpOptions() {
+    await ensureModuleSheet("DS_SP");
+    const headers = getHeaders("DS_SP");
+    const idIndex = headers.indexOf("id");
+    const tenIndex = headers.indexOf("ten_sp");
+    const giaIndex = headers.indexOf("gia_ban");
+    const range = `${quoteSheetName("DS_SP")}!A2:${colName(headers.length - 1)}`;
+    const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
+    dsSpOptions = (data.values || [])
+        .map(row => ({
+            id: String(row[idIndex] || "").trim(),
+            ten: String(row[tenIndex] || "").trim(),
+            gia: String(row[giaIndex] || "").trim()
+        }))
+        .filter(item => item.id);
+    return dsSpOptions;
+}
+
+function getDsSpById(idSp) {
+    const key = String(idSp || "").trim().toLowerCase();
+    return dsSpOptions.find(item => item.id.toLowerCase() === key) || null;
+}
+
+async function loadNppOptions() {
+    await ensureModuleSheet("NPP");
+    const headers = getHeaders("NPP");
+    const idIndex = headers.indexOf("id");
+    const tenIndex = headers.indexOf("ten");
+    const range = `${quoteSheetName("NPP")}!A2:${colName(headers.length - 1)}`;
+    const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
+    nppOptions = (data.values || [])
+        .map(row => ({
+            id: String(row[idIndex] || "").trim(),
+            ten: String(row[tenIndex] || "").trim()
+        }))
+        .filter(item => item.id);
+    return nppOptions;
+}
+
+function renderTabs() {
+    const tabs = document.getElementById("tabs");
+    tabs.innerHTML = Object.entries(CONFIG.modules).map(([moduleName, config]) => `
+        <button type="button" class="tab ${moduleName === currentModule ? "active" : ""}" onclick="switchModule('${escapeJsString(moduleName)}')">
+            <i data-lucide="${escapeHtml(config.icon)}" style="width:18px;"></i>
+            <span>${escapeHtml(config.label)}</span>
+        </button>
+    `).join("");
+    lucide.createIcons();
+}
+
+async function switchModule(moduleName) {
+    currentModule = CONFIG.modules[moduleName] ? moduleName : "NPP";
+    try { sessionStorage.setItem(MODULE_STORAGE_KEY, currentModule); } catch (_) { }
+    document.getElementById("searchInput").value = "";
+    document.getElementById("sheetName").innerText = currentModule;
+    renderTabs();
+    await renderFilterPanel();
+    await fetchData();
+}
+
+async function fetchData() {
+    const headers = getHeaders();
+    showLoading(`Đang tải dữ liệu ${currentModule}...`);
+    try {
+        await ensureModuleSheet(currentModule);
+        const range = `${quoteSheetName(currentModule)}!A2:${colName(headers.length - 1)}`;
+        const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
+        const rows = data.values || [];
+        allData = rows.map((row, index) => {
+            const normalized = headers.map((_, cellIndex) => String(row[cellIndex] ?? ""));
+            normalized._sheetRow = index + 2;
+            return normalized;
+        });
+        filteredData = [...allData];
+        applyCurrentFilters();
+        currentPage = 1;
+        renderHeaders();
+        renderTable();
+    } catch (err) {
+        console.error(err);
+        alert("Không thể tải dữ liệu: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function renderFilterPanel() {
+    const panel = document.getElementById("filterPanel");
+    if (currentModule === "DON_HANG") {
+        await loadNppOptions();
+        panel.innerHTML = `
+            <label><span>Từ ngày</span><input id="filterDateFrom" type="date" onchange="filterTable()"></label>
+            <label><span>Tới ngày</span><input id="filterDateTo" type="date" onchange="filterTable()"></label>
+            <label><span>NPP</span><select id="filterNpp" onchange="filterTable()">
+                <option value="">Tất cả NPP</option>
+                ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
+            </select></label>
+            <label><span>MDH</span><input id="filterMdh" type="text" placeholder="Lọc MDH..." oninput="filterTable()"></label>
+        `;
+        return;
+    }
+    if (currentModule === "CONG_VIEC") {
+        const statusOptions = getModuleConfig("CONG_VIEC").statusOptions || [];
+        panel.innerHTML = `
+            <label><span>Từ ngày</span><input id="filterDateFrom" type="date" onchange="filterTable()"></label>
+            <label><span>Tới ngày</span><input id="filterDateTo" type="date" onchange="filterTable()"></label>
+            <label><span>Tình trạng</span><select id="filterTinhTrang" onchange="filterTable()">
+                <option value="">Tất cả tình trạng</option>
+                ${statusOptions.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}
+            </select></label>
+            <label><span>Trạng thái</span><input id="filterTrangThai" type="text" placeholder="Lọc trạng thái..." oninput="filterTable()"></label>
+            <button type="button" class="view-toggle-btn" onclick="toggleCongViecView()">
+                <i data-lucide="${congViecView === "kanban" ? "table-2" : "columns-3"}" style="width:16px;"></i>
+                ${congViecView === "kanban" ? "Xem bảng" : "Xem kanban"}
+            </button>
+        `;
+        lucide.createIcons();
+        return;
+    }
+    panel.innerHTML = "";
+}
+
+async function toggleCongViecView() {
+    congViecView = congViecView === "kanban" ? "table" : "kanban";
+    try { sessionStorage.setItem("kieuDucCongViecView", congViecView); } catch (_) { }
+    await renderFilterPanel();
+    renderHeaders();
+    renderTable();
+}
+
+function getDateTime(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return 0;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(`${raw}T00:00:00`).getTime();
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])).getTime();
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function applyCurrentFilters() {
+    const term = document.getElementById("searchInput")?.value.trim().toLowerCase() || "";
+    const dateFrom = document.getElementById("filterDateFrom")?.value || "";
+    const dateTo = document.getElementById("filterDateTo")?.value || "";
+    const fromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : 0;
+    const toTime = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : 0;
+
+    filteredData = allData.filter(row => {
+        const matchesSearch = !term || row.some(cell => String(cell).toLowerCase().includes(term));
+        if (!matchesSearch) return false;
+
+        if (currentModule === "DON_HANG") {
+            const ngayIndex = getHeaderIndex("ngay", "DON_HANG");
+            const nppIndex = getHeaderIndex("npp", "DON_HANG");
+            const mdhIndex = getHeaderIndex("mdh", "DON_HANG");
+            const npp = (document.getElementById("filterNpp")?.value || "").toLowerCase();
+            const mdh = (document.getElementById("filterMdh")?.value || "").toLowerCase();
+            const rowTime = getDateTime(row[ngayIndex]);
+            return (!fromTime || rowTime >= fromTime)
+                && (!toTime || rowTime <= toTime)
+                && (!npp || String(row[nppIndex] || "").toLowerCase() === npp)
+                && (!mdh || String(row[mdhIndex] || "").toLowerCase().includes(mdh));
+        }
+
+        if (currentModule === "CONG_VIEC") {
+            const ngayIndex = getHeaderIndex("ngay", "CONG_VIEC");
+            const tinhTrangIndex = getHeaderIndex("tinh_trang", "CONG_VIEC");
+            const trangThaiIndex = getHeaderIndex("trang_thai", "CONG_VIEC");
+            const tinhTrang = (document.getElementById("filterTinhTrang")?.value || "").toLowerCase();
+            const trangThai = (document.getElementById("filterTrangThai")?.value || "").toLowerCase();
+            const rowTime = getDateTime(row[ngayIndex]);
+            return (!fromTime || rowTime >= fromTime)
+                && (!toTime || rowTime <= toTime)
+                && (!tinhTrang || String(row[tinhTrangIndex] || "").toLowerCase() === tinhTrang)
+                && (!trangThai || String(row[trangThaiIndex] || "").toLowerCase().includes(trangThai));
+        }
+
+        return true;
+    });
+}
+
+function renderHeaders() {
+    const head = document.getElementById("tableHead");
+    const headers = currentModule === "DON_HANG" ? ["MDH", "NPP", "TONG_TIEN"] : getHeaders();
+    head.innerHTML = `<tr>${headers.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join("")}</tr>`;
+}
+
+function renderTable() {
+    const showKanban = currentModule === "CONG_VIEC" && congViecView === "kanban";
+    document.getElementById("tableWrapper").style.display = showKanban ? "none" : "block";
+    document.getElementById("kanbanBoard").style.display = showKanban ? "grid" : "none";
+    if (showKanban) {
+        renderCongViecKanban();
+        renderPagination();
+        return;
+    }
+
+    const tbody = document.getElementById("tableBody");
+    if (currentModule === "DON_HANG") {
+        const groups = getDonHangGroups();
+        const start = (currentPage - 1) * rowsPerPage;
+        const pageData = groups.slice(start, start + rowsPerPage);
+        tbody.innerHTML = pageData.map(group => `
+            <tr ondblclick="openDonHangForm('${escapeJsString(group.mdh)}')">
+                <td>${escapeHtml(group.mdh)}</td>
+                <td>${escapeHtml(group.npp)}</td>
+                <td>${escapeHtml(formatDisplayNumber(group.total))}</td>
+            </tr>
+        `).join("");
+        if (!pageData.length) {
+            tbody.innerHTML = `<tr><td colspan="3">Chưa có dữ liệu.</td></tr>`;
+        }
+        renderPagination();
+        return;
+    }
+
+    const headers = getHeaders();
+    const start = (currentPage - 1) * rowsPerPage;
+    const pageData = filteredData.slice(start, start + rowsPerPage);
+    tbody.innerHTML = pageData.map((row, rowIndex) => {
+        const cells = headers.map((header, index) => {
+            const value = row[index] || "";
+            const text = String(value).trim();
+            if (text.startsWith("http://") || text.startsWith("https://")) {
+                return `<td><a href="${escapeHtml(text)}" target="_blank">Link</a></td>`;
+            }
+            const displayValue = isNumericHeader(header) ? formatDisplayNumber(value) : value;
+            return `<td>${escapeHtml(displayValue)}</td>`;
+        }).join("");
+        return `<tr ondblclick="openRecordForm(${start + rowIndex})">${cells}</tr>`;
+    }).join("");
+    if (!pageData.length) {
+        tbody.innerHTML = `<tr><td colspan="${headers.length}">Chưa có dữ liệu.</td></tr>`;
+    }
+    renderPagination();
+}
+
+function renderCongViecKanban() {
+    const board = document.getElementById("kanbanBoard");
+    const headers = getHeaders("CONG_VIEC");
+    const statusIndex = headers.indexOf("tinh_trang");
+    const titleIndex = headers.indexOf("cong_viec");
+    const dateIndex = headers.indexOf("ngay");
+    const contentIndex = headers.indexOf("noi_dung");
+    const noteIndex = headers.indexOf("ghi_chu");
+    const stateIndex = headers.indexOf("trang_thai");
+    const statuses = getModuleConfig("CONG_VIEC").statusOptions || [];
+    board.innerHTML = statuses.map(status => {
+        const cards = filteredData.filter(row => String(row[statusIndex] || "").trim().toLowerCase() === status.toLowerCase());
+        return `
+            <section class="kanban-column">
+                <header>
+                    <span>${escapeHtml(status)}</span>
+                    <strong>${cards.length}</strong>
+                </header>
+                <div class="kanban-cards" data-kanban-status="${escapeHtml(status)}" ondragover="allowKanbanDrop(event)" ondragleave="clearKanbanDrop(event)" ondrop="dropCongViecCard(event)">
+                    ${cards.map(row => {
+                        const rowIndex = filteredData.indexOf(row);
+                        return `
+                            <article class="kanban-card" draggable="true" data-sheet-row="${row._sheetRow}" ondragstart="dragCongViecCard(event)" ondragend="endCongViecDrag(event)" ondblclick="openRecordForm(${rowIndex})">
+                                <h3>${escapeHtml(row[titleIndex] || "Không tên")}</h3>
+                                <p>${escapeHtml(row[contentIndex] || "")}</p>
+                                <div class="kanban-meta">
+                                    <span>${escapeHtml(row[dateIndex] || "")}</span>
+                                    <span>${escapeHtml(row[stateIndex] || "")}</span>
+                                </div>
+                                ${row[noteIndex] ? `<small>${escapeHtml(row[noteIndex])}</small>` : ""}
+                            </article>
+                        `;
+                    }).join("") || `<div class="kanban-empty">Không có việc</div>`}
+                </div>
+            </section>
+        `;
+    }).join("");
+}
+
+function renderPagination() {
+    const totalRows = currentModule === "DON_HANG" ? getDonHangGroups().length : filteredData.length;
+    if (currentModule === "CONG_VIEC" && congViecView === "kanban") {
+        document.getElementById("pagination").innerHTML = "";
+        return;
+    }
+    const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+    const pagination = document.getElementById("pagination");
+    if (totalRows <= rowsPerPage) {
+        pagination.innerHTML = "";
+        return;
+    }
+    pagination.innerHTML = `
+        <button class="pagination-btn" onclick="changePage(-1)" ${currentPage === 1 ? "disabled" : ""}>
+            <i data-lucide="chevron-left" style="width:16px;"></i> Trước
+        </button>
+        <div class="page-info">Trang ${currentPage} / ${totalPages} (${totalRows} dòng)</div>
+        <button class="pagination-btn" onclick="changePage(1)" ${currentPage === totalPages ? "disabled" : ""}>
+            Tiếp <i data-lucide="chevron-right" style="width:16px;"></i>
+        </button>
+    `;
+    lucide.createIcons();
+}
+
+function changePage(delta) {
+    const totalRows = currentModule === "DON_HANG" ? getDonHangGroups().length : filteredData.length;
+    const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+    currentPage = Math.min(Math.max(currentPage + delta, 1), totalPages);
+    renderTable();
+    document.querySelector(".table-wrapper")?.scrollTo({ top: 0 });
+}
+
+function filterTable() {
+    applyCurrentFilters();
+    currentPage = 1;
+    renderTable();
+}
+
+async function writeRecordRow(row, sheetRow) {
+    const headers = getHeaders();
+    const endCol = colName(headers.length - 1);
+    const range = `${quoteSheetName(currentModule)}!A${sheetRow}:${endCol}${sheetRow}`;
+    await sheetsFetch(`/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+        method: "PUT",
+        body: JSON.stringify({ values: [normalizeRow(row)] })
+    });
+}
+
+async function appendRecordRows(rows) {
+    const range = `${quoteSheetName(currentModule)}!A2`;
+    await sheetsFetch(`/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+        method: "POST",
+        body: JSON.stringify({ values: rows.map(normalizeRow) })
+    });
+}
+
+async function deleteRecordRow(sheetRow) {
+    const sheet = spreadsheetSheets.get(currentModule);
+    if (!sheet) throw new Error(`Không tìm thấy sheet ${currentModule}.`);
+    const rowNum = Number(sheetRow);
+    if (!rowNum || rowNum < 2) throw new Error("Không xác định được dòng cần xóa.");
+    await batchUpdate([{
+        deleteDimension: {
+            range: {
+                sheetId: sheet.sheetId,
+                dimension: "ROWS",
+                startIndex: rowNum - 1,
+                endIndex: rowNum
+            }
+        }
+    }]);
+}
+
+async function deleteRecordRows(sheetRows) {
+    const sheet = spreadsheetSheets.get(currentModule);
+    if (!sheet) throw new Error(`Không tìm thấy sheet ${currentModule}.`);
+    const rows = [...new Set(sheetRows.map(Number).filter(row => row >= 2))].sort((a, b) => b - a);
+    if (!rows.length) return;
+    await batchUpdate(rows.map(rowNum => ({
+        deleteDimension: {
+            range: {
+                sheetId: sheet.sheetId,
+                dimension: "ROWS",
+                startIndex: rowNum - 1,
+                endIndex: rowNum
+            }
+        }
+    })));
+}
+
+function renderDonHangForm(rows = []) {
+    const headers = getHeaders("DON_HANG");
+    const ngayIndex = headers.indexOf("ngay");
+    const mdhIndex = headers.indexOf("mdh");
+    const nppIndex = headers.indexOf("npp");
+    const today = new Date().toISOString().slice(0, 10);
+    const ngay = rows[0]?.[ngayIndex] || today;
+    const mdh = rows[0]?.[mdhIndex] || randomCode(10);
+    const npp = rows[0]?.[nppIndex] || "";
+    currentDonHangMdh = rows.length ? mdh : "";
+    const itemRows = rows.length ? rows : [[generateNextId(), ngay, mdh, npp, "", "", "", "", ""]];
+    const productOptions = dsSpOptions
+        .map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.ten)}</option>`)
+        .join("");
+    const nppSelectOptions = nppOptions
+        .map(item => `<option value="${escapeHtml(item.id)}" ${item.id === npp ? "selected" : ""}>${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`)
+        .join("");
+
+    document.getElementById("formFields").innerHTML = `
+        <section class="order-common-fields">
+            <label>
+                <span>NGÀY</span>
+                <input id="donHangNgay" type="date" value="${escapeHtml(ngay)}">
+            </label>
+            <label>
+                <span>MDH</span>
+                <div class="inline-field">
+                    <input id="donHangMdh" type="text" value="${escapeHtml(mdh)}">
+                    <button type="button" class="secondary-btn compact-btn" onclick="generateQuickMdh()">Tạo MDH</button>
+                </div>
+            </label>
+            <label>
+                <span>NPP</span>
+                <select id="donHangNpp">
+                    <option value=""></option>
+                    ${nppSelectOptions}
+                </select>
+            </label>
+        </section>
+        <datalist id="dsSpOptions">${productOptions}</datalist>
+        <section class="order-items-panel">
+            <div class="order-items-head">
+                <h3>Sản phẩm</h3>
+                <button type="button" class="secondary-btn compact-btn" onclick="addDonHangItem()">Thêm sản phẩm</button>
+            </div>
+            <div class="order-items-wrapper">
+                <table class="order-items-table">
+                    <thead>
+                        <tr>
+                            <th>ID_SP</th>
+                            <th>TÊN</th>
+                            <th>ĐƠN GIÁ</th>
+                            <th>SLG</th>
+                            <th>THÀNH TIỀN</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="donHangItemsBody"></tbody>
+                </table>
+            </div>
+            <div class="order-total">Tổng tiền: <strong id="donHangTotal">0</strong></div>
+        </section>
+    `;
+    document.getElementById("donHangItemsBody").innerHTML = itemRows.map((row, index) => renderDonHangItemRow(row, index)).join("");
+    recalculateDonHangItems();
+}
+
+function renderDonHangItemRow(row, index) {
+    const headers = getHeaders("DON_HANG");
+    const idIndex = headers.indexOf("id");
+    const idSpIndex = headers.indexOf("id_sp");
+    const tenIndex = headers.indexOf("ten");
+    const donGiaIndex = headers.indexOf("don_gia");
+    const slgIndex = headers.indexOf("slg");
+    const thanhTienIndex = headers.indexOf("thanh_tien");
+    return `
+        <tr data-order-item="${index}">
+            <td>
+                <input type="hidden" data-order-field="id" value="${escapeHtml(row[idIndex] || generateNextId())}">
+                <input data-order-field="id_sp" type="text" list="dsSpOptions" value="${escapeHtml(row[idSpIndex] || "")}" oninput="updateDonHangProduct(this)">
+            </td>
+            <td><input data-order-field="ten" type="text" value="${escapeHtml(row[tenIndex] || "")}" readonly></td>
+            <td><input data-order-field="don_gia" type="text" value="${escapeHtml(row[donGiaIndex] || "")}" readonly></td>
+            <td><input data-order-field="slg" type="text" value="${escapeHtml(row[slgIndex] || "")}" oninput="recalculateDonHangItems()"></td>
+            <td><input data-order-field="thanh_tien" type="text" value="${escapeHtml(row[thanhTienIndex] || "")}" readonly></td>
+            <td><button type="button" class="icon-btn" onclick="removeDonHangItem(this)" title="Xóa sản phẩm"><i data-lucide="trash-2" style="width:16px;"></i></button></td>
+        </tr>
+    `;
+}
+
+async function openDonHangForm(mdh = null) {
+    await Promise.all([loadDsSpOptions(), loadNppOptions()]);
+    const mdhIndex = getHeaderIndex("mdh", "DON_HANG");
+    const rows = mdh ? allData.filter(row => String(row[mdhIndex] || "").trim() === mdh) : [];
+    document.getElementById("editingSheetRow").value = rows.map(row => row._sheetRow).join(",");
+    document.getElementById("productModalTitle").innerText = rows.length ? `Sửa đơn hàng ${mdh}` : "Thêm mới Đơn hàng";
+    document.getElementById("deleteBtn").style.display = rows.length ? "inline-flex" : "none";
+    renderDonHangForm(rows);
+    document.getElementById("productModal").classList.add("active");
+    document.getElementById("donHangMdh")?.focus();
+    lucide.createIcons();
+}
+
+function generateQuickMdh() {
+    const input = document.getElementById("donHangMdh");
+    if (input) input.value = randomCode(10);
+}
+
+function addDonHangItem() {
+    const body = document.getElementById("donHangItemsBody");
+    const index = body.querySelectorAll("tr").length;
+    body.insertAdjacentHTML("beforeend", renderDonHangItemRow([], index));
+    lucide.createIcons();
+}
+
+function removeDonHangItem(button) {
+    const row = button.closest("tr");
+    if (row && document.querySelectorAll("#donHangItemsBody tr").length > 1) row.remove();
+    recalculateDonHangItems();
+}
+
+function updateDonHangProduct(input) {
+    const product = getDsSpById(input.value);
+    const row = input.closest("tr");
+    if (!row) return;
+    row.querySelector('[data-order-field="ten"]').value = product?.ten || "";
+    row.querySelector('[data-order-field="don_gia"]').value = product?.gia || "";
+    recalculateDonHangItems();
+}
+
+function recalculateDonHangItems() {
+    let total = 0;
+    document.querySelectorAll("#donHangItemsBody tr").forEach(row => {
+        const donGiaInput = row.querySelector('[data-order-field="don_gia"]');
+        const slgInput = row.querySelector('[data-order-field="slg"]');
+        const thanhTienInput = row.querySelector('[data-order-field="thanh_tien"]');
+        const lineTotal = Math.round(parseMoney(donGiaInput?.value) * parseMoney(slgInput?.value) * 100) / 100;
+        if (thanhTienInput) thanhTienInput.value = lineTotal || "";
+        total += lineTotal || 0;
+    });
+    const totalEl = document.getElementById("donHangTotal");
+    if (totalEl) totalEl.innerText = formatDisplayNumber(total);
+}
+
+function renderOptionButtons(fieldId, value, options) {
+    return `
+        <div class="option-buttons" data-option-field="${escapeHtml(fieldId)}">
+            <input id="${escapeHtml(fieldId)}" type="hidden" value="${escapeHtml(value)}">
+            ${options.map(option => `<button type="button" class="${String(value).toLowerCase() === option.toLowerCase() ? "active" : ""}" onclick="setOptionButtonValue(this, '${escapeJsString(option)}')">${escapeHtml(option)}</button>`).join("")}
+        </div>
+    `;
+}
+
+function setOptionButtonValue(button, value) {
+    const group = button.closest(".option-buttons");
+    if (!group) return;
+    const input = group.querySelector("input");
+    if (input) input.value = value;
+    group.querySelectorAll("button").forEach(item => item.classList.toggle("active", item === button));
+}
+
+function renderFormFields(row = null) {
+    const container = document.getElementById("formFields");
+    const textareaHeaders = getModuleConfig().textareaHeaders || [];
+    const statusOptions = getModuleConfig().statusOptions || [];
+    container.innerHTML = getHeaders().map((header, index) => {
+        const rawValue = row?.[index] ?? (header === "id" ? generateNextId() : (header === "ngay" ? new Date().toISOString().slice(0, 10) : ""));
+        const value = escapeHtml(rawValue);
+        if (header === "id") {
+            return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="text" value="${value}" ${row ? "readonly" : ""}></label>`;
+        }
+        if (currentModule === "CONG_VIEC" && header === "tinh_trang") {
+            return `<label class="wide-field"><span>${escapeHtml(header.toUpperCase())}</span>${renderOptionButtons(`formField_${index}`, rawValue, statusOptions)}</label>`;
+        }
+        if (textareaHeaders.includes(header)) {
+            return `<label class="wide-field"><span>${escapeHtml(header.toUpperCase())}</span><textarea id="formField_${index}" rows="4">${value}</textarea></label>`;
+        }
+        const type = header.includes("ngay") ? "date" : "text";
+        const readonly = currentModule === "DON_HANG" && header === "thanh_tien" ? "readonly" : "";
+        return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="${type}" value="${value}" ${readonly}></label>`;
+    }).join("");
+}
+
+function recalculateDonHangForm() {
+    if (currentModule !== "DON_HANG") return;
+    const headers = getHeaders();
+    const donGiaIndex = headers.indexOf("don_gia");
+    const slgIndex = headers.indexOf("slg");
+    const thanhTienIndex = headers.indexOf("thanh_tien");
+    if (donGiaIndex < 0 || slgIndex < 0 || thanhTienIndex < 0) return;
+    const donGia = parseMoney(document.getElementById(`formField_${donGiaIndex}`)?.value);
+    const slg = parseMoney(document.getElementById(`formField_${slgIndex}`)?.value);
+    const input = document.getElementById(`formField_${thanhTienIndex}`);
+    if (input) input.value = donGia && slg ? String(Math.round(donGia * slg * 100) / 100) : "";
+}
+
+function openRecordForm(rowIndex = null) {
+    if (currentModule === "DON_HANG") {
+        openDonHangForm(null);
+        return;
+    }
+    const row = rowIndex === null ? null : filteredData[rowIndex];
+    document.getElementById("editingSheetRow").value = row?._sheetRow || "";
+    document.getElementById("productModalTitle").innerText = row
+        ? `Sửa ${getModuleConfig().label}`
+        : `Thêm mới ${getModuleConfig().label}`;
+    document.getElementById("deleteBtn").style.display = row ? "inline-flex" : "none";
+    renderFormFields(row);
+    document.getElementById("formFields").oninput = recalculateDonHangForm;
+    recalculateDonHangForm();
+    document.getElementById("productModal").classList.add("active");
+    document.getElementById("formField_1")?.focus();
+}
+
+function closeProductForm() {
+    document.getElementById("productModal").classList.remove("active");
+    document.getElementById("formFields").oninput = null;
+}
+
+async function saveRecordFromForm(event) {
+    event.preventDefault();
+    if (currentModule === "DON_HANG") {
+        await saveDonHangForm();
+        return;
+    }
+    recalculateDonHangForm();
+    let row = getHeaders().map((_, index) => document.getElementById(`formField_${index}`)?.value.trim() || "");
+    if (!row[0]) row[0] = generateNextId();
+
+    const editingSheetRow = Number(document.getElementById("editingSheetRow").value);
+    const existing = !editingSheetRow && allData.find(item => getRowId(item) === row[0]);
+    if (existing) {
+        alert(`ID "${row[0]}" đã tồn tại trong module ${currentModule}.`);
+        return;
+    }
+
+    showLoading("Đang lưu dữ liệu...");
+    try {
+        if (editingSheetRow) {
+            await writeRecordRow(row, editingSheetRow);
+        } else {
+            await appendRecordRows([row]);
+        }
+        closeProductForm();
+        await fetchData();
+        filterTable();
+    } catch (err) {
+        console.error(err);
+        alert("Không lưu được dữ liệu: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function saveDonHangForm() {
+    recalculateDonHangItems();
+    const ngay = String(document.getElementById("donHangNgay")?.value || "").trim();
+    const mdh = String(document.getElementById("donHangMdh")?.value || "").trim();
+    const npp = String(document.getElementById("donHangNpp")?.value || "").trim();
+    if (!ngay) {
+        alert("Vui lòng chọn ngày.");
+        return;
+    }
+    if (!mdh) {
+        alert("Vui lòng nhập MDH.");
+        return;
+    }
+    if (!npp) {
+        alert("Vui lòng chọn NPP.");
+        return;
+    }
+
+    const rows = [...document.querySelectorAll("#donHangItemsBody tr")].map(item => {
+        const id = String(item.querySelector('[data-order-field="id"]')?.value || "").trim() || generateNextId();
+        const idSp = String(item.querySelector('[data-order-field="id_sp"]')?.value || "").trim();
+        const ten = String(item.querySelector('[data-order-field="ten"]')?.value || "").trim();
+        const donGia = String(item.querySelector('[data-order-field="don_gia"]')?.value || "").trim();
+        const slg = String(item.querySelector('[data-order-field="slg"]')?.value || "").trim();
+        const thanhTien = String(item.querySelector('[data-order-field="thanh_tien"]')?.value || "").trim();
+        return [id, ngay, mdh, npp, idSp, ten, donGia, slg, thanhTien];
+    }).filter(row => row[4] && parseMoney(row[7]) > 0);
+
+    if (!rows.length) {
+        alert("Vui lòng thêm ít nhất một sản phẩm và nhập số lượng.");
+        return;
+    }
+
+    const oldRows = document.getElementById("editingSheetRow").value
+        .split(",")
+        .map(value => Number(value))
+        .filter(Boolean);
+
+    showLoading("Đang lưu đơn hàng...");
+    try {
+        if (oldRows.length) await deleteRecordRows(oldRows);
+        await appendRecordRows(rows);
+        closeProductForm();
+        await fetchData();
+        filterTable();
+    } catch (err) {
+        console.error(err);
+        alert("Không lưu được đơn hàng: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteCurrentRecord() {
+    if (currentModule === "DON_HANG") {
+        const sheetRows = document.getElementById("editingSheetRow").value
+            .split(",")
+            .map(value => Number(value))
+            .filter(Boolean);
+        if (!sheetRows.length) return;
+        if (!confirm(`Xóa đơn hàng ${currentDonHangMdh || ""}?`)) return;
+        showLoading("Đang xóa đơn hàng...");
+        try {
+            await deleteRecordRows(sheetRows);
+            closeProductForm();
+            await fetchData();
+            filterTable();
+        } catch (err) {
+            console.error(err);
+            alert("Không xóa được đơn hàng: " + err.message);
+        } finally {
+            hideLoading();
+        }
+        return;
+    }
+    const sheetRow = Number(document.getElementById("editingSheetRow").value);
+    if (!sheetRow) return;
+    if (!confirm(`Xóa dòng này khỏi module ${currentModule}?`)) return;
+    showLoading("Đang xóa dữ liệu...");
+    try {
+        await deleteRecordRow(sheetRow);
+        closeProductForm();
+        await fetchData();
+        filterTable();
+    } catch (err) {
+        console.error(err);
+        alert("Không xóa được dữ liệu: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function readExcelRows(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = event => {
+            try {
+                const workbook = XLSX.read(new Uint8Array(event.target.result), { type: "array" });
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                const firstRow = rows[0] || [];
+                const currentHeaders = getHeaders().map(header => header.toLowerCase());
+                const fileHeaders = firstRow.map(cell => String(cell || "").trim().toLowerCase());
+                const hasHeader = currentHeaders.some(header => fileHeaders.includes(header));
+                resolve(hasHeader ? rows.slice(1) : rows);
+            } catch (err) {
+                reject(err);
+            }
+        };
+        reader.onerror = () => reject(new Error(`Không thể đọc file ${file.name}`));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+async function handleFileUpload(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    await processFiles(files);
+    event.target.value = "";
+}
+
+async function processFiles(files) {
+    const excelFiles = files.filter(file => /\.(xlsx|xls|csv)$/i.test(file.name));
+    if (!excelFiles.length) {
+        alert("Vui lòng tải lên file Excel hoặc CSV.");
+        return;
+    }
+    if (!confirm(`Thêm dữ liệu từ ${excelFiles.length} file vào module ${currentModule}?`)) return;
+
+    showLoading("Đang xử lý file và cập nhật Google Sheets...");
+    try {
+        const rowsFromFiles = await Promise.all(excelFiles.map(readExcelRows));
+        const generatedIds = [];
+        const rows = rowsFromFiles
+            .flat()
+            .map(row => getHeaders().map((_, index) => row[index] ?? ""))
+            .filter(row => row.some(cell => String(cell || "").trim()))
+            .map(row => {
+                if (!String(row[0] || "").trim()) {
+                    row[0] = generateNextId(generatedIds);
+                    generatedIds.push(row[0]);
+                }
+                return row;
+            });
+        if (!rows.length) throw new Error("Không có dòng dữ liệu hợp lệ để tải lên.");
+        await appendRecordRows(rows);
+        await fetchData();
+        filterTable();
+        alert(`Đã thêm ${rows.length} dòng vào module ${currentModule}.`);
+    } catch (err) {
+        console.error(err);
+        alert("Lỗi khi tải dữ liệu: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function initDragAndDrop() {
+    const overlay = document.getElementById("dropOverlay");
+    window.addEventListener("dragover", event => {
+        event.preventDefault();
+        overlay.classList.add("active");
+    });
+    window.addEventListener("dragleave", event => {
+        if (event.relatedTarget === null) overlay.classList.remove("active");
+    });
+    window.addEventListener("drop", event => {
+        event.preventDefault();
+        overlay.classList.remove("active");
+        if (event.dataTransfer.files.length > 0) {
+            processFiles(Array.from(event.dataTransfer.files));
+        }
+    });
+}
+
+function initModalDismiss() {
+    const modalMask = document.getElementById("productModal");
+    modalMask.addEventListener("mousedown", event => {
+        if (event.target === modalMask) closeProductForm();
+    });
+    document.addEventListener("mousedown", event => {
+        if (!modalMask.classList.contains("active")) return;
+        if (event.target.closest(".modal")) return;
+        closeProductForm();
+    });
+}
+
+async function init() {
+    document.title = CONFIG.appName;
+    document.getElementById("pageTitle").innerText = CONFIG.appName;
+    document.getElementById("brandText").innerHTML = "KIỀU<br>ĐỨC";
+    try {
+        const saved = sessionStorage.getItem(MODULE_STORAGE_KEY);
+        if (CONFIG.modules[saved]) currentModule = saved;
+    } catch (_) { }
+    renderTabs();
+    lucide.createIcons();
+    initDragAndDrop();
+    initModalDismiss();
+    await renderFilterPanel();
+    await fetchData();
+}
+
+init();
