@@ -24,7 +24,28 @@
         <p>Đang tải dữ liệu...</p>
     </div>
 
-    <div class="app-shell">
+    <section id="authScreen" class="auth-screen">
+        <form class="login-card" onsubmit="handleLogin(event)">
+            <div class="login-logo">KIỀU<br>ĐỨC</div>
+            <h1>Đăng nhập</h1>
+            <label>
+                <span>Tên đăng nhập</span>
+                <input id="loginId" type="text" autocomplete="username" required>
+            </label>
+            <label>
+                <span>Mật khẩu</span>
+                <input id="loginPassword" type="password" autocomplete="current-password" required>
+            </label>
+            <label class="remember-row">
+                <input id="rememberLogin" type="checkbox" checked>
+                <span>Lưu đăng nhập</span>
+            </label>
+            <p id="loginError" class="login-error"></p>
+            <button type="submit" class="primary-btn">Đăng nhập</button>
+        </form>
+    </section>
+
+    <div class="app-shell" style="display: none;">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="brand">
@@ -35,6 +56,7 @@
                     </div>
                 </div>
             </div>
+            <div id="userPanel" class="user-panel"></div>
             <div id="tabs" class="tabs"></div>
         </aside>
 

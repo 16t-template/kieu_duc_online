@@ -68,11 +68,18 @@ sR2Sh8e3h3Knd6j1tceRIFU=
             icon: "bar-chart-3",
             headers: [],
             reportOnly: true
+        },
+        DSNV: {
+            label: "DSNV",
+            icon: "users",
+            headers: ["id", "ho_ten", "hinh_anh", "gioi_tinh", "ngay_sinh", "quyen", "mk"],
+            hidden: true
         }
     }
 };
 
 const MODULE_STORAGE_KEY = "kieuDucActiveModule";
+const AUTH_STORAGE_KEY = "kieuDucCurrentUser";
 
 let accessToken = null;
 let tokenExpiry = 0;
@@ -87,6 +94,7 @@ let nppOptions = [];
 let currentDonHangMdh = "";
 let congViecView = "table";
 let reportData = null;
+let currentUser = null;
 
 function getModuleConfig(moduleName = currentModule) {
     return CONFIG.modules[moduleName] || CONFIG.modules.NPP;
@@ -476,7 +484,7 @@ async function buildBaoCaoData() {
 
 function renderTabs() {
     const tabs = document.getElementById("tabs");
-    tabs.innerHTML = Object.entries(CONFIG.modules).map(([moduleName, config]) => `
+    tabs.innerHTML = Object.entries(CONFIG.modules).filter(([, config]) => !config.hidden).map(([moduleName, config]) => `
         <button type="button" class="tab ${moduleName === currentModule ? "active" : ""}" onclick="switchModule('${escapeJsString(moduleName)}')">
             <i data-lucide="${escapeHtml(config.icon)}" style="width:18px;"></i>
             <span>${escapeHtml(config.label)}</span>
@@ -1510,22 +1518,132 @@ function initModalDismiss() {
     });
 }
 
-async function init() {
+function getStoredUser() {
+    try {
+        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function saveStoredUser(user) {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+}
+
+function clearStoredUser() {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function showLogin() {
+    document.getElementById("authScreen").style.display = "grid";
+    document.querySelector(".app-shell").style.display = "none";
+    hideLoading();
+    document.getElementById("loginId")?.focus();
+}
+
+function showApp() {
+    document.getElementById("authScreen").style.display = "none";
+    document.querySelector(".app-shell").style.display = "";
+    renderCurrentUser();
+}
+
+function renderCurrentUser() {
+    const panel = document.getElementById("userPanel");
+    if (!panel || !currentUser) return;
+    const avatar = currentUser.hinh_anh
+        ? `<img src="${escapeHtml(currentUser.hinh_anh)}" alt="">`
+        : `<div class="user-avatar-fallback">${escapeHtml(String(currentUser.ho_ten || currentUser.id || "?").slice(0, 1).toUpperCase())}</div>`;
+    panel.innerHTML = `
+        ${avatar}
+        <div class="user-info">
+            <strong>${escapeHtml(currentUser.ho_ten || currentUser.id)}</strong>
+            <span>${escapeHtml(currentUser.quyen || "")}</span>
+        </div>
+        <button type="button" class="icon-btn" onclick="logout()" title="Đăng xuất">
+            <i data-lucide="log-out" style="width:16px;"></i>
+        </button>
+    `;
+    lucide.createIcons();
+}
+
+async function loadNhanVienRows() {
+    const rows = await loadModuleRows("DSNV");
+    const headers = getHeaders("DSNV");
+    return rows.map(row => Object.fromEntries(headers.map((header, index) => [header, String(row[index] || "").trim()])));
+}
+
+async function handleLogin(event) {
+    event.preventDefault();
+    const id = String(document.getElementById("loginId").value || "").trim();
+    const mk = String(document.getElementById("loginPassword").value || "").trim();
+    const remember = document.getElementById("rememberLogin")?.checked ?? true;
+    const errorEl = document.getElementById("loginError");
+    if (errorEl) errorEl.innerText = "";
+    if (!id || !mk) {
+        if (errorEl) errorEl.innerText = "Vui lòng nhập tên đăng nhập và mật khẩu.";
+        return;
+    }
+
+    showLoading("Đang đăng nhập...");
+    try {
+        const users = await loadNhanVienRows();
+        const user = users.find(item => item.id === id && item.mk === mk);
+        if (!user) {
+            if (errorEl) errorEl.innerText = "Sai tên đăng nhập hoặc mật khẩu.";
+            return;
+        }
+        currentUser = {
+            id: user.id,
+            ho_ten: user.ho_ten,
+            hinh_anh: user.hinh_anh,
+            gioi_tinh: user.gioi_tinh,
+            ngay_sinh: user.ngay_sinh,
+            quyen: user.quyen
+        };
+        if (remember) saveStoredUser(currentUser);
+        showApp();
+        await startApp();
+    } catch (err) {
+        console.error(err);
+        if (errorEl) errorEl.innerText = "Không đăng nhập được: " + err.message;
+    } finally {
+        hideLoading();
+    }
+}
+
+function logout() {
+    currentUser = null;
+    clearStoredUser();
+    showLogin();
+}
+
+async function startApp() {
     document.title = CONFIG.appName;
     document.getElementById("pageTitle").innerText = CONFIG.appName;
     document.getElementById("brandText").innerHTML = "KIỀU<br>ĐỨC";
     try {
         const saved = sessionStorage.getItem(MODULE_STORAGE_KEY);
-        if (CONFIG.modules[saved]) currentModule = saved;
+        if (CONFIG.modules[saved] && !CONFIG.modules[saved].hidden) currentModule = saved;
         const savedCongViecView = sessionStorage.getItem("kieuDucCongViecView");
         if (["table", "kanban"].includes(savedCongViecView)) congViecView = savedCongViecView;
     } catch (_) { }
     renderTabs();
     updateModuleActions();
     lucide.createIcons();
-    initModalDismiss();
     await renderFilterPanel();
     await fetchData();
+}
+
+async function init() {
+    initModalDismiss();
+    currentUser = getStoredUser();
+    if (currentUser?.id) {
+        showApp();
+        await startApp();
+        return;
+    }
+    showLogin();
 }
 
 init();
