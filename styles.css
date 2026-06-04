@@ -420,39 +420,89 @@ button {
 }
 
 .sales-chart {
-    display: grid;
-    gap: 12px;
+    min-height: 260px;
 }
 
-.sales-bar-row {
-    display: grid;
-    grid-template-columns: minmax(120px, 0.8fr) minmax(120px, 1.2fr) minmax(90px, auto);
+.sales-pie-layout {
+    min-height: 280px;
+    display: flex;
     align-items: center;
+    justify-content: center;
+    gap: 24px;
+    flex-wrap: wrap;
+    padding: 10px 0;
+}
+
+.sales-pie {
+    width: min(260px, 70vw);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.sales-pie-center {
+    width: 46%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 4px;
+    text-align: center;
+    box-shadow: 0 0 0 1px var(--border);
+}
+
+.sales-pie-center span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.sales-pie-center strong {
+    color: var(--text);
+    font-size: 0.95rem;
+}
+
+.sales-pie-legend {
+    display: grid;
     gap: 10px;
+    min-width: min(320px, 100%);
+    max-width: 460px;
 }
 
-.sales-label,
-.sales-value {
-    color: #475569;
-    font-size: 0.82rem;
-    font-weight: 700;
+.sales-pie-legend-item {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr);
+    align-items: start;
+    gap: 9px;
 }
 
-.sales-value {
-    text-align: right;
-}
-
-.sales-bar-track {
+.sales-pie-legend-item i {
+    width: 12px;
     height: 12px;
-    overflow: hidden;
-    border-radius: 999px;
-    background: #e2e8f0;
+    border-radius: 3px;
+    margin-top: 3px;
 }
 
-.sales-bar {
-    height: 100%;
-    border-radius: inherit;
-    background: var(--primary);
+.sales-pie-legend-item strong,
+.sales-pie-legend-item span {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.sales-pie-legend-item strong {
+    color: var(--text);
+    font-size: 0.82rem;
+}
+
+.sales-pie-legend-item span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
 }
 
 .report-empty {
@@ -823,11 +873,4 @@ td a {
         grid-template-columns: 1fr;
     }
 
-    .sales-bar-row {
-        grid-template-columns: 1fr;
-    }
-
-    .sales-value {
-        text-align: left;
-    }
 }

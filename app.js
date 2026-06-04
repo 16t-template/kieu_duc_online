@@ -35,7 +35,8 @@ sR2Sh8e3h3Knd6j1tceRIFU=
         NPP: {
             label: "NPP",
             icon: "building-2",
-            headers: ["id", "ten", "sdt", "dia_chi", "ngay_sinh"]
+            headers: ["id", "ten", "sdt", "dia_chi", "ngay_sinh", "hoa_hong"],
+            numericHeaders: ["hoa_hong"]
         },
         DON_HANG: {
             label: "Đơn hàng",
@@ -333,15 +334,31 @@ async function loadNppOptions() {
     const headers = getHeaders("NPP");
     const idIndex = headers.indexOf("id");
     const tenIndex = headers.indexOf("ten");
+    const hoaHongIndex = headers.indexOf("hoa_hong");
     const range = `${quoteSheetName("NPP")}!A2:${colName(headers.length - 1)}`;
     const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
     nppOptions = (data.values || [])
         .map(row => ({
             id: String(row[idIndex] || "").trim(),
-            ten: String(row[tenIndex] || "").trim()
+            ten: String(row[tenIndex] || "").trim(),
+            hoaHong: String(row[hoaHongIndex] || "").trim()
         }))
         .filter(item => item.id);
     return nppOptions;
+}
+
+function getNppById(id) {
+    const key = String(id || "").trim().toLowerCase();
+    return nppOptions.find(item => item.id.toLowerCase() === key) || null;
+}
+
+function getNppDisplayName(id) {
+    const npp = getNppById(id);
+    return npp?.ten || String(id || "");
+}
+
+function getNppCommissionRate(id) {
+    return parseMoney(getNppById(id)?.hoaHong || 0);
 }
 
 async function loadModuleRows(moduleName) {
@@ -511,6 +528,7 @@ async function fetchData() {
     const headers = getHeaders();
     showLoading(`Đang tải dữ liệu ${currentModule}...`);
     try {
+        if (currentModule === "DON_HANG") await loadNppOptions();
         await ensureModuleSheet(currentModule);
         const range = `${quoteSheetName(currentModule)}!A2:${colName(headers.length - 1)}`;
         const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
@@ -655,7 +673,7 @@ function renderHeaders() {
         head.innerHTML = "";
         return;
     }
-    const headers = getHeaders();
+    const headers = currentModule === "DON_HANG" ? [...getHeaders(), "tien_hoa_hong"] : getHeaders();
     head.innerHTML = `<tr>${headers.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join("")}</tr>`;
 }
 
@@ -678,18 +696,26 @@ function renderTable() {
     }
 
     const tbody = document.getElementById("tableBody");
-    const headers = getHeaders();
-    const mdhIndex = headers.indexOf("mdh");
+    const storageHeaders = getHeaders();
+    const headers = currentModule === "DON_HANG" ? [...storageHeaders, "tien_hoa_hong"] : storageHeaders;
+    const mdhIndex = storageHeaders.indexOf("mdh");
+    const nppIndex = storageHeaders.indexOf("npp");
+    const thanhTienIndex = storageHeaders.indexOf("thanh_tien");
     const start = (currentPage - 1) * rowsPerPage;
     const pageData = filteredData.slice(start, start + rowsPerPage);
     tbody.innerHTML = pageData.map((row, rowIndex) => {
         const cells = headers.map((header, index) => {
-            const value = row[index] || "";
+            let value = header === "tien_hoa_hong"
+                ? parseMoney(row[thanhTienIndex]) * getNppCommissionRate(row[nppIndex])
+                : row[index] || "";
+            if (currentModule === "DON_HANG" && header === "npp") {
+                value = getNppDisplayName(row[nppIndex]);
+            }
             const text = String(value).trim();
             if (text.startsWith("http://") || text.startsWith("https://")) {
                 return `<td><a href="${escapeHtml(text)}" target="_blank">Link</a></td>`;
             }
-            const displayValue = isNumericHeader(header) ? formatDisplayNumber(value) : value;
+            const displayValue = isNumericHeader(header) || header === "tien_hoa_hong" ? formatDisplayNumber(value) : value;
             return `<td>${escapeHtml(displayValue)}</td>`;
         }).join("");
         const action = currentModule === "DON_HANG"
@@ -706,7 +732,20 @@ function renderTable() {
 function renderBaoCao() {
     document.getElementById("reportView")?.remove();
     const data = reportData || { totalSales: 0, totalQuantity: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
-    const maxSales = Math.max(...data.nppRows.map(row => row.sales), 1);
+    const chartColors = ["#4f46e5", "#0f766e", "#dc2626", "#ca8a04", "#0284c7", "#7c3aed", "#16a34a", "#db2777"];
+    const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
+    let chartCursor = 0;
+    const chartSegments = data.nppRows.map((row, index) => {
+        const start = chartCursor;
+        const percent = chartTotal ? (row.sales / chartTotal) * 100 : 0;
+        chartCursor += percent;
+        return {
+            ...row,
+            color: chartColors[index % chartColors.length],
+            percent,
+            segment: `${chartColors[index % chartColors.length]} ${start}% ${chartCursor}%`
+        };
+    });
     const bestNppText = data.bestNpp
         ? `${data.bestNpp.npp}${data.bestNpp.nppName ? ` - ${data.bestNpp.nppName}` : ""}`
         : "Chưa có dữ liệu";
@@ -763,15 +802,27 @@ function renderBaoCao() {
             <section class="report-panel">
                 <h2>Biểu đồ doanh số NPP</h2>
                 <div class="sales-chart">
-                    ${data.nppRows.map(row => `
-                        <div class="sales-bar-row">
-                            <div class="sales-label">${escapeHtml(row.npp)}${row.nppName ? ` - ${escapeHtml(row.nppName)}` : ""}</div>
-                            <div class="sales-bar-track">
-                                <div class="sales-bar" style="width:${Math.max((row.sales / maxSales) * 100, 2)}%"></div>
+                    ${chartSegments.length ? `
+                        <div class="sales-pie-layout">
+                            <div class="sales-pie" style="background: conic-gradient(${chartSegments.map(item => item.segment).join(", ")});">
+                                <div class="sales-pie-center">
+                                    <span>Tổng</span>
+                                    <strong>${escapeHtml(formatDisplayNumber(chartTotal))}</strong>
+                                </div>
                             </div>
-                            <div class="sales-value">${escapeHtml(formatDisplayNumber(row.sales))}</div>
+                            <div class="sales-pie-legend">
+                                ${chartSegments.map(item => `
+                                    <div class="sales-pie-legend-item">
+                                        <i style="background:${escapeHtml(item.color)}"></i>
+                                        <div>
+                                            <strong>${escapeHtml(item.nppName || item.npp)}</strong>
+                                            <span>${escapeHtml(formatDisplayNumber(item.sales))} (${item.percent.toFixed(1)}%)</span>
+                                        </div>
+                                    </div>
+                                `).join("")}
+                            </div>
                         </div>
-                    `).join("") || `<div class="report-empty">Chưa có dữ liệu doanh số.</div>`}
+                    ` : `<div class="report-empty">Chưa có dữ liệu doanh số.</div>`}
                 </div>
             </section>
         </div>
