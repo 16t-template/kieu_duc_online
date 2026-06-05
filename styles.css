@@ -384,6 +384,18 @@ button {
     background: #dc2626;
 }
 
+.select-col {
+    width: 46px;
+    min-width: 46px;
+    text-align: center;
+}
+
+.select-col input {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
 .table-wrapper {
     background: #fff;
     border: 1px solid var(--border);

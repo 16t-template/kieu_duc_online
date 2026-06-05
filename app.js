@@ -97,6 +97,7 @@ let congViecView = "table";
 let reportData = null;
 let currentUser = null;
 let moduleLoadSeq = 0;
+let selectedSheetRows = new Set();
 
 function getModuleConfig(moduleName = currentModule) {
     return CONFIG.modules[moduleName] || CONFIG.modules.NPP;
@@ -423,6 +424,7 @@ async function buildBaoCaoData() {
     const dateSales = new Map();
     let totalSales = 0;
     let totalQuantity = 0;
+    let totalCommission = 0;
 
     donHangRows.forEach(row => {
         const npp = String(row[nppIndex] || "").trim() || "Không có NPP";
@@ -452,7 +454,9 @@ async function buildBaoCaoData() {
         }
         const entry = nppSales.get(npp);
         entry.sales += sales;
-        entry.commission += sales * (parseMoney(entry.hoaHong) / 100);
+        const commission = sales * (parseMoney(entry.hoaHong) / 100);
+        entry.commission += commission;
+        totalCommission += commission;
         entry.quantity += quantity;
         if (idSp) {
             if (!entry.sku.has(idSp)) {
@@ -489,6 +493,7 @@ async function buildBaoCaoData() {
     return {
         totalSales,
         totalQuantity,
+        totalCommission,
         totalSku: skuSet.size,
         bestNpp: nppRowsReport[0] || null,
         nppRows: nppRowsReport,
@@ -526,6 +531,64 @@ function updateModuleActions() {
     if (uploadBtn) uploadBtn.style.display = currentModule === "CONG_VIEC" || isReport ? "none" : "flex";
     if (addBtn) addBtn.style.display = isReport ? "none" : "flex";
     if (searchContainer) searchContainer.style.display = isReport ? "none" : "block";
+    updateBulkDeleteButton();
+}
+
+function canBulkSelectRows() {
+    return !getModuleConfig().reportOnly && !(currentModule === "CONG_VIEC" && congViecView === "kanban");
+}
+
+function clearSelectedRows() {
+    selectedSheetRows.clear();
+    updateBulkDeleteButton();
+    const selectAll = document.getElementById("selectAllRows");
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    }
+}
+
+function updateBulkDeleteButton() {
+    const btn = document.getElementById("bulkDeleteBtn");
+    if (!btn) return;
+    const show = canBulkSelectRows() && selectedSheetRows.size > 0;
+    btn.style.display = show ? "flex" : "none";
+    if (show) {
+        btn.innerHTML = `<i data-lucide="trash-2" style="width:18px;"></i> Xóa đã chọn (${selectedSheetRows.size})`;
+        lucide.createIcons();
+    }
+}
+
+function syncSelectAllCheckbox() {
+    const selectAll = document.getElementById("selectAllRows");
+    if (!selectAll) return;
+    const selectableRows = filteredData.map(row => Number(row._sheetRow)).filter(Boolean);
+    const checkedCount = selectableRows.filter(rowNum => selectedSheetRows.has(rowNum)).length;
+    selectAll.checked = selectableRows.length > 0 && checkedCount === selectableRows.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < selectableRows.length;
+}
+
+function toggleRowSelection(sheetRow, checked) {
+    const rowNum = Number(sheetRow);
+    if (!rowNum) return;
+    if (checked) selectedSheetRows.add(rowNum);
+    else selectedSheetRows.delete(rowNum);
+    syncSelectAllCheckbox();
+    updateBulkDeleteButton();
+}
+
+function toggleSelectAllRows(checkbox) {
+    const selectableRows = filteredData.map(row => Number(row._sheetRow)).filter(Boolean);
+    selectableRows.forEach(rowNum => {
+        if (checkbox.checked) selectedSheetRows.add(rowNum);
+        else selectedSheetRows.delete(rowNum);
+    });
+    document.querySelectorAll(".row-select-checkbox").forEach(item => {
+        const rowNum = Number(item.dataset.sheetRow);
+        item.checked = checkbox.checked;
+    });
+    checkbox.indeterminate = false;
+    updateBulkDeleteButton();
 }
 
 async function switchModule(moduleName) {
@@ -534,6 +597,7 @@ async function switchModule(moduleName) {
     const seq = moduleLoadSeq;
     try { sessionStorage.setItem(MODULE_STORAGE_KEY, currentModule); } catch (_) { }
     document.getElementById("searchInput").value = "";
+    clearSelectedRows();
     updateModuleTitle();
     renderTabs();
     updateModuleActions();
@@ -558,6 +622,7 @@ async function fetchData(seq = moduleLoadSeq) {
             filteredData = [];
             allData = [];
             currentPage = 1;
+            clearSelectedRows();
             renderHeaders();
             renderTable();
         } catch (err) {
@@ -588,6 +653,7 @@ async function fetchData(seq = moduleLoadSeq) {
         filteredData = [...allData];
         applyCurrentFilters();
         currentPage = 1;
+        clearSelectedRows();
         renderHeaders();
         renderTable();
     } catch (err) {
@@ -658,6 +724,7 @@ async function renderFilterPanel() {
 async function toggleCongViecView() {
     congViecView = congViecView === "kanban" ? "table" : "kanban";
     try { sessionStorage.setItem("kieuDucCongViecView", congViecView); } catch (_) { }
+    clearSelectedRows();
     await renderFilterPanel();
     renderHeaders();
     renderTable();
@@ -724,12 +791,18 @@ function applyCurrentFilters() {
 
 function renderHeaders() {
     const head = document.getElementById("tableHead");
-    if (getModuleConfig().reportOnly) {
+    if (getModuleConfig().reportOnly || !canBulkSelectRows()) {
         head.innerHTML = "";
         return;
     }
     const headers = currentModule === "DON_HANG" ? [...getHeaders(), "tien_hoa_hong"] : getHeaders();
-    head.innerHTML = `<tr>${headers.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join("")}</tr>`;
+    head.innerHTML = `<tr>
+        <th class="select-col">
+            <input id="selectAllRows" type="checkbox" onchange="toggleSelectAllRows(this)" onclick="event.stopPropagation()" title="Chọn tất cả dòng đang lọc">
+        </th>
+        ${headers.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join("")}
+    </tr>`;
+    syncSelectAllCheckbox();
 }
 
 function renderTable() {
@@ -773,20 +846,25 @@ function renderTable() {
             const displayValue = isNumericHeader(header) || header === "tien_hoa_hong" ? formatDisplayNumber(value) : value;
             return `<td>${escapeHtml(displayValue)}</td>`;
         }).join("");
+        const sheetRow = Number(row._sheetRow);
+        const selectCell = `<td class="select-col">
+            <input class="row-select-checkbox" type="checkbox" data-sheet-row="${sheetRow}" ${selectedSheetRows.has(sheetRow) ? "checked" : ""} onclick="event.stopPropagation()" onchange="toggleRowSelection(${sheetRow}, this.checked)">
+        </td>`;
         const action = currentModule === "DON_HANG"
             ? `openDonHangForm('${escapeJsString(row[mdhIndex] || "")}')`
             : `openRecordForm(${start + rowIndex})`;
-        return `<tr ondblclick="${action}">${cells}</tr>`;
+        return `<tr ondblclick="${action}">${selectCell}${cells}</tr>`;
     }).join("");
     if (!pageData.length) {
-        tbody.innerHTML = `<tr><td colspan="${headers.length}">Chưa có dữ liệu.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${headers.length + 1}">Chưa có dữ liệu.</td></tr>`;
     }
+    syncSelectAllCheckbox();
     renderPagination();
 }
 
 function renderBaoCao() {
     document.getElementById("reportView")?.remove();
-    const data = reportData || { totalSales: 0, totalQuantity: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
+    const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
     const reportNppName = row => row?.nppName || row?.npp || "";
     const chartColors = ["#4f46e5", "#0f766e", "#dc2626", "#ca8a04", "#0284c7", "#7c3aed", "#16a34a", "#db2777"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
@@ -802,9 +880,6 @@ function renderBaoCao() {
             segment: `${chartColors[index % chartColors.length]} ${start}% ${chartCursor}%`
         };
     });
-    const bestNppText = data.bestNpp
-        ? reportNppName(data.bestNpp)
-        : "Chưa có dữ liệu";
     const report = document.createElement("section");
     report.id = "reportView";
     report.className = "report-view";
@@ -823,8 +898,8 @@ function renderBaoCao() {
                 <strong>${escapeHtml(formatDisplayNumber(data.totalSku))}</strong>
             </article>
             <article>
-                <span>NPP doanh số cao nhất</span>
-                <strong>${escapeHtml(bestNppText)}</strong>
+                <span>Tổng hoa hồng</span>
+                <strong>${escapeHtml(formatDisplayNumber(data.totalCommission))}</strong>
             </article>
         </div>
         <div class="report-grid">
@@ -1037,6 +1112,7 @@ function changePage(delta) {
 }
 
 function filterTable() {
+    clearSelectedRows();
     applyCurrentFilters();
     currentPage = 1;
     renderTable();
@@ -1143,6 +1219,23 @@ async function deleteRecordRows(sheetRows) {
             }
         }
     })));
+}
+
+async function deleteSelectedRows() {
+    if (!canBulkSelectRows() || !selectedSheetRows.size) return;
+    const rows = [...selectedSheetRows];
+    if (!confirm(`Xóa ${rows.length} dòng đã chọn khỏi module ${getModuleConfig().label}?`)) return;
+    showLoading("Đang xóa dữ liệu...");
+    try {
+        await deleteRecordRows(rows);
+        clearSelectedRows();
+        await fetchData();
+    } catch (err) {
+        console.error(err);
+        alert("Không xóa được dữ liệu: " + err.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 function renderDonHangForm(rows = []) {

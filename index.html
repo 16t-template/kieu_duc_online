@@ -72,6 +72,9 @@
                     <button id="addBtn" type="button" onclick="openRecordForm()">
                         <i data-lucide="plus" style="width:18px;"></i> Thêm mới
                     </button>
+                    <button id="bulkDeleteBtn" type="button" class="danger-btn" onclick="deleteSelectedRows()" style="display:none">
+                        <i data-lucide="trash-2" style="width:18px;"></i> Xóa đã chọn
+                    </button>
                     <input type="file" id="fileInput" hidden multiple accept=".xlsx, .xls, .csv" onchange="handleFileUpload(event)">
                 </div>
                 <div id="filterPanel" class="filter-panel"></div>
