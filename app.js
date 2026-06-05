@@ -401,6 +401,10 @@ async function buildBaoCaoData() {
         String(row[nppHeaders.indexOf("id")] || "").trim(),
         String(row[nppHeaders.indexOf("ten")] || "").trim()
     ]));
+    const nppCommissionById = new Map(nppRows.map(row => [
+        String(row[nppHeaders.indexOf("id")] || "").trim(),
+        String(row[nppHeaders.indexOf("hoa_hong")] || "").trim()
+    ]));
     const nppIndex = donHangHeaders.indexOf("npp");
     const ngayIndex = donHangHeaders.indexOf("ngay");
     const idSpIndex = donHangHeaders.indexOf("id_sp");
@@ -439,13 +443,16 @@ async function buildBaoCaoData() {
             nppSales.set(npp, {
                 npp,
                 nppName: nppNameById.get(npp) || "",
+                hoaHong: nppCommissionById.get(npp) || "",
                 sales: 0,
+                commission: 0,
                 quantity: 0,
                 sku: new Map()
             });
         }
         const entry = nppSales.get(npp);
         entry.sales += sales;
+        entry.commission += sales * (parseMoney(entry.hoaHong) / 100);
         entry.quantity += quantity;
         if (idSp) {
             if (!entry.sku.has(idSp)) {
@@ -780,6 +787,7 @@ function renderTable() {
 function renderBaoCao() {
     document.getElementById("reportView")?.remove();
     const data = reportData || { totalSales: 0, totalQuantity: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
+    const reportNppName = row => row?.nppName || row?.npp || "";
     const chartColors = ["#4f46e5", "#0f766e", "#dc2626", "#ca8a04", "#0284c7", "#7c3aed", "#16a34a", "#db2777"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
     let chartCursor = 0;
@@ -795,7 +803,7 @@ function renderBaoCao() {
         };
     });
     const bestNppText = data.bestNpp
-        ? `${data.bestNpp.npp}${data.bestNpp.nppName ? ` - ${data.bestNpp.nppName}` : ""}`
+        ? reportNppName(data.bestNpp)
         : "Chưa có dữ liệu";
     const report = document.createElement("section");
     report.id = "reportView";
@@ -836,7 +844,7 @@ function renderBaoCao() {
                         <tbody>
                             ${data.nppRows.map(row => `
                                 <tr>
-                                    <td>${escapeHtml(row.npp)}${row.nppName ? ` - ${escapeHtml(row.nppName)}` : ""}</td>
+                                    <td>${escapeHtml(reportNppName(row))}</td>
                                     <td>${escapeHtml(row.bestSku?.idSp || "")}</td>
                                     <td>${escapeHtml(row.bestSku?.productName || "")}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.bestSku?.quantity || 0))}</td>
@@ -863,7 +871,7 @@ function renderBaoCao() {
                                     <div class="sales-pie-legend-item">
                                         <i style="background:${escapeHtml(item.color)}"></i>
                                         <div>
-                                            <strong>${escapeHtml(item.nppName || item.npp)}</strong>
+                                            <strong>${escapeHtml(reportNppName(item))}</strong>
                                             <span>${escapeHtml(formatDisplayNumber(item.sales))} (${item.percent.toFixed(1)}%)</span>
                                         </div>
                                     </div>
@@ -882,6 +890,7 @@ function renderBaoCao() {
                         <thead>
                             <tr>
                                 <th>NPP</th>
+                                <th>HOA HỒNG</th>
                                 <th>SLG</th>
                                 <th>TIỀN</th>
                             </tr>
@@ -889,11 +898,12 @@ function renderBaoCao() {
                         <tbody>
                             ${data.nppRows.map(row => `
                                 <tr>
-                                    <td>${escapeHtml(row.npp)}${row.nppName ? ` - ${escapeHtml(row.nppName)}` : ""}</td>
+                                    <td>${escapeHtml(reportNppName(row))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.commission))}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.quantity))}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
                                 </tr>
-                            `).join("") || `<tr><td colspan="3">Chưa có dữ liệu.</td></tr>`}
+                            `).join("") || `<tr><td colspan="4">Chưa có dữ liệu.</td></tr>`}
                         </tbody>
                     </table>
                 </div>
