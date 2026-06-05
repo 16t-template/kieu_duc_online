@@ -284,6 +284,32 @@ h1 {
     outline: none;
 }
 
+.quick-date-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-bottom: 1px;
+}
+
+.quick-date-buttons button {
+    min-height: 38px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.quick-date-buttons button:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: #eef2ff;
+}
+
 .view-toggle-btn {
     min-height: 38px;
     display: flex;

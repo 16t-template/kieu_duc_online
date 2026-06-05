@@ -670,6 +670,7 @@ async function renderFilterPanel() {
         panel.innerHTML = `
             <label><span>Từ ngày</span><input id="reportDateFrom" type="date" onchange="fetchData()"></label>
             <label><span>Tới ngày</span><input id="reportDateTo" type="date" onchange="fetchData()"></label>
+            ${renderQuickDateButtons("report")}
             <label><span>NPP</span><select id="reportNpp" onchange="fetchData()">
                 <option value="">Tất cả NPP</option>
                 ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
@@ -687,6 +688,7 @@ async function renderFilterPanel() {
         panel.innerHTML = `
             <label><span>Từ ngày</span><input id="filterDateFrom" type="date" onchange="filterTable()"></label>
             <label><span>Tới ngày</span><input id="filterDateTo" type="date" onchange="filterTable()"></label>
+            ${renderQuickDateButtons("table")}
             <label><span>NPP</span><select id="filterNpp" onchange="filterTable()">
                 <option value="">Tất cả NPP</option>
                 ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
@@ -705,6 +707,7 @@ async function renderFilterPanel() {
         panel.innerHTML = `
             <label><span>Từ ngày</span><input id="filterDateFrom" type="date" onchange="filterTable()"></label>
             <label><span>Tới ngày</span><input id="filterDateTo" type="date" onchange="filterTable()"></label>
+            ${renderQuickDateButtons("table")}
             <label><span>Tình trạng</span><select id="filterTinhTrang" onchange="filterTable()">
                 <option value="">Tất cả tình trạng</option>
                 ${statusOptions.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}
@@ -745,6 +748,56 @@ function sortFilteredDataByNgayDesc() {
     const ngayIndex = getHeaderIndex("ngay", currentModule);
     if (ngayIndex < 0) return;
     filteredData.sort((a, b) => getDateTime(b[ngayIndex]) - getDateTime(a[ngayIndex]));
+}
+
+function formatDateInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function getQuickDateRange(type) {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const end = new Date(start);
+    if (type === "yesterday") {
+        start.setDate(start.getDate() - 1);
+        end.setDate(end.getDate() - 1);
+    }
+    if (type === "week") {
+        const day = start.getDay() || 7;
+        start.setDate(start.getDate() - day + 1);
+        end.setTime(start.getTime());
+        end.setDate(end.getDate() + 6);
+    }
+    if (type === "month") {
+        start.setDate(1);
+        end.setTime(start.getTime());
+        end.setMonth(end.getMonth() + 1, 0);
+    }
+    return { from: formatDateInput(start), to: formatDateInput(end) };
+}
+
+function renderQuickDateButtons(scope) {
+    return `
+        <div class="quick-date-buttons" aria-label="Lọc nhanh theo ngày">
+            <button type="button" onclick="applyQuickDateFilter('${scope}', 'today')">Hôm nay</button>
+            <button type="button" onclick="applyQuickDateFilter('${scope}', 'yesterday')">Hôm qua</button>
+            <button type="button" onclick="applyQuickDateFilter('${scope}', 'week')">Tuần này</button>
+            <button type="button" onclick="applyQuickDateFilter('${scope}', 'month')">Tháng này</button>
+        </div>
+    `;
+}
+
+function applyQuickDateFilter(scope, type) {
+    const range = getQuickDateRange(type);
+    const fromInput = document.getElementById(scope === "report" ? "reportDateFrom" : "filterDateFrom");
+    const toInput = document.getElementById(scope === "report" ? "reportDateTo" : "filterDateTo");
+    if (fromInput) fromInput.value = range.from;
+    if (toInput) toInput.value = range.to;
+    if (scope === "report") fetchData();
+    else filterTable();
 }
 
 function applyCurrentFilters() {
