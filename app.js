@@ -191,6 +191,12 @@ function formatDisplayNumber(value) {
     return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(parseMoney(raw));
 }
 
+function clampCommissionPercent(value) {
+    const number = parseMoney(value);
+    if (!number) return "";
+    return String(Math.min(Math.max(number, 0.001), 100));
+}
+
 function isNumericHeader(header) {
     return (getModuleConfig().numericHeaders || []).includes(header);
 }
@@ -367,7 +373,8 @@ function getNppDisplayName(id) {
 }
 
 function getNppCommissionRate(id) {
-    return parseMoney(getNppById(id)?.hoaHong || 0);
+    const percent = parseMoney(getNppById(id)?.hoaHong || 0);
+    return Math.min(Math.max(percent, 0), 100) / 100;
 }
 
 async function loadModuleRows(moduleName) {
@@ -1305,6 +1312,9 @@ function renderFormFields(row = null) {
         if (textareaHeaders.includes(header)) {
             return `<label class="wide-field"><span>${escapeHtml(header.toUpperCase())}</span><textarea id="formField_${index}" rows="4">${value}</textarea></label>`;
         }
+        if (currentModule === "NPP" && header === "hoa_hong") {
+            return `<label><span>HOA_HONG (%)</span><input id="formField_${index}" type="number" min="0.001" max="100" step="0.001" value="${value}"></label>`;
+        }
         const type = header.includes("ngay") ? "date" : "text";
         const readonly = currentModule === "DON_HANG" && header === "thanh_tien" ? "readonly" : "";
         return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="${type}" value="${value}" ${readonly}></label>`;
@@ -1355,6 +1365,12 @@ async function saveRecordFromForm(event) {
     }
     recalculateDonHangForm();
     let row = getHeaders().map((_, index) => document.getElementById(`formField_${index}`)?.value.trim() || "");
+    if (currentModule === "NPP") {
+        const commissionIndex = getHeaderIndex("hoa_hong", "NPP");
+        if (commissionIndex >= 0 && row[commissionIndex]) {
+            row[commissionIndex] = clampCommissionPercent(row[commissionIndex]);
+        }
+    }
     if (!row[0]) row[0] = generateNextId();
 
     const editingSheetRow = Number(document.getElementById("editingSheetRow").value);
