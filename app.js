@@ -64,8 +64,8 @@ sR2Sh8e3h3Knd6j1tceRIFU=
             textareaHeaders: ["huong_xly", "ghi_chu"]
         },
         BAO_CAO: {
-            label: "Báo cáo",
-            icon: "bar-chart-3",
+            label: "Dashboard",
+            icon: "layout-dashboard",
             headers: [],
             reportOnly: true
         },
@@ -80,11 +80,12 @@ sR2Sh8e3h3Knd6j1tceRIFU=
 
 const MODULE_STORAGE_KEY = "kieuDucActiveModule";
 const AUTH_STORAGE_KEY = "kieuDucCurrentUser";
+const MODULE_ORDER = ["BAO_CAO", "DON_HANG", "CONG_VIEC", "NPP", "DS_SP", "BAO_HANH"];
 
 let accessToken = null;
 let tokenExpiry = 0;
 let spreadsheetSheets = new Map();
-let currentModule = "NPP";
+let currentModule = "BAO_CAO";
 let allData = [];
 let filteredData = [];
 let currentPage = 1;
@@ -95,6 +96,7 @@ let currentDonHangMdh = "";
 let congViecView = "table";
 let reportData = null;
 let currentUser = null;
+let moduleLoadSeq = 0;
 
 function getModuleConfig(moduleName = currentModule) {
     return CONFIG.modules[moduleName] || CONFIG.modules.NPP;
@@ -160,13 +162,12 @@ function quoteSheetName(name) {
     return `'${String(name).replace(/'/g, "''")}'`;
 }
 
-function showLoading(message = "Đang tải dữ liệu...") {
-    document.getElementById("loading").style.display = "flex";
-    document.querySelector("#loading p").innerText = message;
+function showLoading(_message = "Đang tải dữ liệu...") {
+    document.body.classList.add("is-busy");
 }
 
 function hideLoading() {
-    document.getElementById("loading").style.display = "none";
+    document.body.classList.remove("is-busy");
 }
 
 function parseMoney(value) {
@@ -484,13 +485,23 @@ async function buildBaoCaoData() {
 
 function renderTabs() {
     const tabs = document.getElementById("tabs");
-    tabs.innerHTML = Object.entries(CONFIG.modules).filter(([, config]) => !config.hidden).map(([moduleName, config]) => `
+    tabs.innerHTML = MODULE_ORDER
+        .filter(moduleName => CONFIG.modules[moduleName] && !CONFIG.modules[moduleName].hidden)
+        .map(moduleName => {
+            const config = CONFIG.modules[moduleName];
+            return `
         <button type="button" class="tab ${moduleName === currentModule ? "active" : ""}" onclick="switchModule('${escapeJsString(moduleName)}')">
             <i data-lucide="${escapeHtml(config.icon)}" style="width:18px;"></i>
             <span>${escapeHtml(config.label)}</span>
         </button>
-    `).join("");
+    `;
+        }).join("");
     lucide.createIcons();
+}
+
+function updateModuleTitle() {
+    const sheetName = document.getElementById("sheetName");
+    if (sheetName) sheetName.innerText = getModuleConfig().label.toUpperCase();
 }
 
 function updateModuleActions() {
@@ -504,21 +515,32 @@ function updateModuleActions() {
 }
 
 async function switchModule(moduleName) {
-    currentModule = CONFIG.modules[moduleName] ? moduleName : "NPP";
+    currentModule = CONFIG.modules[moduleName] && !CONFIG.modules[moduleName].hidden ? moduleName : "BAO_CAO";
+    moduleLoadSeq += 1;
+    const seq = moduleLoadSeq;
     try { sessionStorage.setItem(MODULE_STORAGE_KEY, currentModule); } catch (_) { }
     document.getElementById("searchInput").value = "";
-    document.getElementById("sheetName").innerText = currentModule;
+    updateModuleTitle();
     renderTabs();
     updateModuleActions();
-    await renderFilterPanel();
-    await fetchData();
+    renderFilterPanel();
+    allData = [];
+    filteredData = [];
+    reportData = null;
+    currentPage = 1;
+    renderHeaders();
+    renderTable();
+    requestAnimationFrame(() => {
+        if (seq === moduleLoadSeq) fetchData(seq);
+    });
 }
 
-async function fetchData() {
+async function fetchData(seq = moduleLoadSeq) {
     if (getModuleConfig().reportOnly) {
         showLoading("Đang tải báo cáo...");
         try {
             reportData = await buildBaoCaoData();
+            if (seq !== moduleLoadSeq) return;
             filteredData = [];
             allData = [];
             currentPage = 1;
@@ -537,9 +559,12 @@ async function fetchData() {
     showLoading(`Đang tải dữ liệu ${currentModule}...`);
     try {
         if (currentModule === "DON_HANG") await loadNppOptions();
+        if (seq !== moduleLoadSeq) return;
         await ensureModuleSheet(currentModule);
+        if (seq !== moduleLoadSeq) return;
         const range = `${quoteSheetName(currentModule)}!A2:${colName(headers.length - 1)}`;
         const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
+        if (seq !== moduleLoadSeq) return;
         const rows = data.values || [];
         allData = rows.map((row, index) => {
             const normalized = headers.map((_, cellIndex) => String(row[cellIndex] ?? ""));
@@ -562,7 +587,6 @@ async function fetchData() {
 async function renderFilterPanel() {
     const panel = document.getElementById("filterPanel");
     if (getModuleConfig().reportOnly) {
-        await loadNppOptions();
         panel.innerHTML = `
             <label><span>Từ ngày</span><input id="reportDateFrom" type="date" onchange="fetchData()"></label>
             <label><span>Tới ngày</span><input id="reportDateTo" type="date" onchange="fetchData()"></label>
@@ -572,10 +596,14 @@ async function renderFilterPanel() {
             </select></label>
             <label><span>ID_SP</span><input id="reportIdSp" type="text" placeholder="Lọc ID_SP..." oninput="fetchData()"></label>
         `;
+        if (!nppOptions.length) {
+            loadNppOptions().then(() => {
+                if (currentModule === "BAO_CAO") renderFilterPanel();
+            }).catch(console.error);
+        }
         return;
     }
     if (currentModule === "DON_HANG") {
-        await loadNppOptions();
         panel.innerHTML = `
             <label><span>Từ ngày</span><input id="filterDateFrom" type="date" onchange="filterTable()"></label>
             <label><span>Tới ngày</span><input id="filterDateTo" type="date" onchange="filterTable()"></label>
@@ -585,6 +613,11 @@ async function renderFilterPanel() {
             </select></label>
             <label><span>MDH</span><input id="filterMdh" type="text" placeholder="Lọc MDH..." oninput="filterTable()"></label>
         `;
+        if (!nppOptions.length) {
+            loadNppOptions().then(() => {
+                if (currentModule === "DON_HANG") renderFilterPanel();
+            }).catch(console.error);
+        }
         return;
     }
     if (currentModule === "CONG_VIEC") {
@@ -1628,6 +1661,7 @@ async function startApp() {
         const savedCongViecView = sessionStorage.getItem("kieuDucCongViecView");
         if (["table", "kanban"].includes(savedCongViecView)) congViecView = savedCongViecView;
     } catch (_) { }
+    updateModuleTitle();
     renderTabs();
     updateModuleActions();
     lucide.createIcons();
