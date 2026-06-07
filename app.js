@@ -408,6 +408,7 @@ async function buildBaoCaoData() {
     ]));
     const nppIndex = donHangHeaders.indexOf("npp");
     const ngayIndex = donHangHeaders.indexOf("ngay");
+    const mdhIndex = donHangHeaders.indexOf("mdh");
     const idSpIndex = donHangHeaders.indexOf("id_sp");
     const tenIndex = donHangHeaders.indexOf("ten");
     const slgIndex = donHangHeaders.indexOf("slg");
@@ -429,6 +430,7 @@ async function buildBaoCaoData() {
     donHangRows.forEach(row => {
         const npp = String(row[nppIndex] || "").trim() || "Không có NPP";
         const ngay = String(row[ngayIndex] || "").trim();
+        const mdh = String(row[mdhIndex] || "").trim();
         const idSp = String(row[idSpIndex] || "").trim();
         const productName = String(row[tenIndex] || "").trim();
         const rowTime = getDateTime(ngay);
@@ -449,6 +451,7 @@ async function buildBaoCaoData() {
                 sales: 0,
                 commission: 0,
                 quantity: 0,
+                orders: new Set(),
                 sku: new Map()
             });
         }
@@ -458,6 +461,7 @@ async function buildBaoCaoData() {
         entry.commission += commission;
         totalCommission += commission;
         entry.quantity += quantity;
+        if (mdh) entry.orders.add(mdh);
         if (idSp) {
             if (!entry.sku.has(idSp)) {
                 entry.sku.set(idSp, { idSp, productName, quantity: 0, sales: 0 });
@@ -486,6 +490,7 @@ async function buildBaoCaoData() {
     const nppRowsReport = [...nppSales.values()]
         .map(entry => ({
             ...entry,
+            orderCount: entry.orders.size,
             bestSku: [...entry.sku.values()].sort((a, b) => b.quantity - a.quantity || b.sales - a.sales)[0] || null
         }))
         .sort((a, b) => b.sales - a.sales);
@@ -919,7 +924,7 @@ function renderBaoCao() {
     document.getElementById("reportView")?.remove();
     const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
     const reportNppName = row => row?.nppName || row?.npp || "";
-    const chartColors = ["#4f46e5", "#0f766e", "#dc2626", "#ca8a04", "#0284c7", "#7c3aed", "#16a34a", "#db2777"];
+    const chartColors = ["#5b4df7", "#00a896", "#ff4d6d", "#ffb703", "#219ebc", "#9b5de5", "#38b000", "#f15bb5"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
     let chartCursor = 0;
     const chartSegments = data.nppRows.map((row, index) => {
@@ -955,8 +960,8 @@ function renderBaoCao() {
                 <strong>${escapeHtml(formatDisplayNumber(data.totalCommission))}</strong>
             </article>
         </div>
-        <div class="report-grid">
-            <section class="report-panel">
+        <div class="report-grid dashboard-report-group">
+            <section class="report-panel best-npp-panel">
                 <h2>Mã bán tốt nhất theo NPP</h2>
                 <div class="report-table-wrap">
                     <table>
@@ -983,7 +988,7 @@ function renderBaoCao() {
                     </table>
                 </div>
             </section>
-            <section class="report-panel">
+            <section class="report-panel npp-chart-panel">
                 <h2>Biểu đồ doanh số NPP</h2>
                 <div class="sales-chart">
                     ${chartSegments.length ? `
@@ -1010,33 +1015,16 @@ function renderBaoCao() {
                 </div>
             </section>
         </div>
-        <div class="report-grid report-grid-3">
-            <section class="report-panel">
-                <h2>Bảng NPP</h2>
-                <div class="report-table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>NPP</th>
-                                <th>HOA HỒNG</th>
-                                <th>SLG</th>
-                                <th>TIỀN</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.nppRows.map(row => `
-                                <tr>
-                                    <td>${escapeHtml(reportNppName(row))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.commission))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.quantity))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
-                                </tr>
-                            `).join("") || `<tr><td colspan="4">Chưa có dữ liệu.</td></tr>`}
-                        </tbody>
-                    </table>
-                </div>
+        <div class="report-chart-pair">
+            <section class="report-panel commission-chart-panel">
+                <h2>Số đơn & hoa hồng NPP</h2>
+                ${data.nppRows.length
+                    ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
+                    : `<div class="report-empty">Chưa có dữ liệu hoa hồng.</div>`}
             </section>
-            <section class="report-panel">
+        </div>
+        <div class="report-grid dashboard-report-group">
+            <section class="report-panel sku-report-panel">
                 <h2>Bảng ID_SP</h2>
                 <div class="report-table-wrap">
                     <table>
@@ -1061,32 +1049,129 @@ function renderBaoCao() {
                     </table>
                 </div>
             </section>
-            <section class="report-panel">
-                <h2>Bảng ngày</h2>
-                <div class="report-table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>NGÀY</th>
-                                <th>SLG</th>
-                                <th>TIỀN</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.dateRows.map(row => `
-                                <tr>
-                                    <td>${escapeHtml(row.ngay)}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.quantity))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
-                                </tr>
-                            `).join("") || `<tr><td colspan="3">Chưa có dữ liệu.</td></tr>`}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
         </div>
     `;
     document.querySelector(".main-content").insertBefore(report, document.getElementById("pagination"));
+    if (data.nppRows.length) {
+        requestAnimationFrame(() => drawNppCommissionChart(data.nppRows));
+    }
+}
+
+function drawNppCommissionChart(rows) {
+    const canvas = document.getElementById("commissionLineChart");
+    if (!canvas) return;
+    const containerWidth = canvas.parentElement?.clientWidth || 640;
+    const cssWidth = Math.max(containerWidth, rows.length * 90 + 110, 420);
+    const cssHeight = 300;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const padding = { top: 46, right: 70, bottom: 52, left: 70 };
+    const plotWidth = cssWidth - padding.left - padding.right;
+    const plotHeight = cssHeight - padding.top - padding.bottom;
+    const maxOrders = Math.max(...rows.map(row => row.orderCount || 0), 1);
+    const orderAxisMax = maxOrders <= 5 ? 5 : Math.ceil(maxOrders / 5) * 5;
+    const commissionAxisMax = Math.max(...rows.map(row => row.commission || 0), 1) * 1.1;
+    const formatAxis = value => new Intl.NumberFormat("vi-VN", {
+        notation: value >= 1000000 ? "compact" : "standard",
+        maximumFractionDigits: 1
+    }).format(value);
+
+    ctx.font = "600 11px Inter, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.fillStyle = "#64748b";
+    ctx.lineWidth = 1;
+    for (let step = 0; step <= 5; step += 1) {
+        const y = padding.top + (plotHeight / 5) * step;
+        const orderValue = orderAxisMax * (1 - step / 5);
+        const commissionValue = commissionAxisMax * (1 - step / 5);
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(cssWidth - padding.right, y);
+        ctx.stroke();
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#2563eb";
+        ctx.fillText(formatAxis(orderValue), padding.left - 9, y);
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#ec4899";
+        ctx.fillText(formatAxis(commissionValue), cssWidth - padding.right + 9, y);
+    }
+
+    const categoryWidth = plotWidth / Math.max(rows.length, 1);
+    const xFor = index => padding.left + categoryWidth * (index + 0.5);
+    const orderYFor = value => padding.top + plotHeight - ((Number(value) || 0) / orderAxisMax) * plotHeight;
+    const commissionYFor = value => padding.top + plotHeight - ((Number(value) || 0) / commissionAxisMax) * plotHeight;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    rows.forEach((row, index) => {
+        const x = xFor(index);
+        const label = String(row.nppName || row.npp || "");
+        const maxLabelWidth = Math.max(categoryWidth - 12, 44);
+        let compactLabel = label;
+        while (compactLabel.length > 3 && ctx.measureText(`${compactLabel}...`).width > maxLabelWidth) {
+            compactLabel = compactLabel.slice(0, -1);
+        }
+        if (compactLabel !== label) compactLabel += "...";
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(compactLabel, x, padding.top + plotHeight + 12);
+    });
+    ctx.restore();
+
+    const barWidth = Math.min(42, Math.max(18, plotWidth / Math.max(rows.length * 2.4, 1)));
+    rows.forEach((row, index) => {
+        const x = xFor(index);
+        const y = orderYFor(row.orderCount || 0);
+        ctx.fillStyle = "#2563eb";
+        ctx.fillRect(x - barWidth / 2, y, barWidth, padding.top + plotHeight - y);
+    });
+
+    ctx.strokeStyle = "#ec4899";
+    ctx.fillStyle = "#ec4899";
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    rows.forEach((row, index) => {
+        const x = xFor(index);
+        const y = commissionYFor(row.commission);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    rows.forEach((row, index) => {
+        ctx.beginPath();
+        ctx.arc(xFor(index), commissionYFor(row.commission), 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    const legendY = 20;
+    [["Số đơn (MDH) - trục trái", "#2563eb"], ["Hoa hồng - trục phải", "#ec4899"]].forEach(([label, color], index) => {
+        const x = padding.left + index * 168;
+        if (index === 0) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, legendY - 6, 24, 12);
+        } else {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x, legendY);
+            ctx.lineTo(x + 24, legendY);
+            ctx.stroke();
+        }
+        ctx.fillStyle = "#475569";
+        ctx.textAlign = "left";
+        ctx.fillText(label, x + 31, legendY);
+    });
 }
 
 function renderCongViecKanban() {
