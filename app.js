@@ -480,10 +480,12 @@ async function buildBaoCaoData() {
             if (!skuEntry.productName && productName) skuEntry.productName = productName;
         }
         if (ngay) {
-            if (!dateSales.has(ngay)) dateSales.set(ngay, { ngay, quantity: 0, sales: 0 });
+            if (!dateSales.has(ngay)) dateSales.set(ngay, { ngay, quantity: 0, sales: 0, commission: 0, orders: new Set() });
             const dateEntry = dateSales.get(ngay);
             dateEntry.quantity += quantity;
             dateEntry.sales += sales;
+            dateEntry.commission += commission;
+            if (mdh) dateEntry.orders.add(mdh);
         }
     });
 
@@ -503,7 +505,9 @@ async function buildBaoCaoData() {
         bestNpp: nppRowsReport[0] || null,
         nppRows: nppRowsReport,
         skuRows: [...skuSales.values()].sort((a, b) => b.sales - a.sales),
-        dateRows: [...dateSales.values()].sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay))
+        dateRows: [...dateSales.values()]
+            .map(entry => ({ ...entry, orderCount: entry.orders.size }))
+            .sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay))
     };
 }
 
@@ -805,6 +809,18 @@ function applyQuickDateFilter(scope, type) {
     else filterTable();
 }
 
+function formatChartDateLabel(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const [year, month, day] = raw.split("-");
+        return `${day}/${month}`;
+    }
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (match) return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
+    return raw.length > 8 ? raw.slice(0, 8) : raw;
+}
+
 function applyCurrentFilters() {
     const term = document.getElementById("searchInput")?.value.trim().toLowerCase() || "";
     const dateFrom = document.getElementById("filterDateFrom")?.value || "";
@@ -924,7 +940,7 @@ function renderBaoCao() {
     document.getElementById("reportView")?.remove();
     const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
     const reportNppName = row => row?.nppName || row?.npp || "";
-    const chartColors = ["#5b4df7", "#00a896", "#ff4d6d", "#ffb703", "#219ebc", "#9b5de5", "#38b000", "#f15bb5"];
+    const chartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
     let chartCursor = 0;
     const chartSegments = data.nppRows.map((row, index) => {
@@ -1017,8 +1033,8 @@ function renderBaoCao() {
         </div>
         <div class="report-chart-pair">
             <section class="report-panel commission-chart-panel">
-                <h2>Số đơn & hoa hồng NPP</h2>
-                ${data.nppRows.length
+                <h2>Số đơn & hoa hồng theo ngày</h2>
+                ${data.dateRows.length
                     ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
                     : `<div class="report-empty">Chưa có dữ liệu hoa hồng.</div>`}
             </section>
@@ -1052,12 +1068,12 @@ function renderBaoCao() {
         </div>
     `;
     document.querySelector(".main-content").insertBefore(report, document.getElementById("pagination"));
-    if (data.nppRows.length) {
-        requestAnimationFrame(() => drawNppCommissionChart(data.nppRows));
+    if (data.dateRows.length) {
+        requestAnimationFrame(() => drawOrderCommissionByDateChart([...data.dateRows].sort((a, b) => getDateTime(a.ngay) - getDateTime(b.ngay))));
     }
 }
 
-function drawNppCommissionChart(rows) {
+function drawOrderCommissionByDateChart(rows) {
     const canvas = document.getElementById("commissionLineChart");
     if (!canvas) return;
     const containerWidth = canvas.parentElement?.clientWidth || 640;
@@ -1098,10 +1114,10 @@ function drawNppCommissionChart(rows) {
         ctx.lineTo(cssWidth - padding.right, y);
         ctx.stroke();
         ctx.textAlign = "right";
-        ctx.fillStyle = "#2563eb";
+        ctx.fillStyle = "#4285f4";
         ctx.fillText(formatAxis(orderValue), padding.left - 9, y);
         ctx.textAlign = "left";
-        ctx.fillStyle = "#ec4899";
+        ctx.fillStyle = "#f6a21a";
         ctx.fillText(formatAxis(commissionValue), cssWidth - padding.right + 9, y);
     }
 
@@ -1115,7 +1131,7 @@ function drawNppCommissionChart(rows) {
     ctx.textBaseline = "top";
     rows.forEach((row, index) => {
         const x = xFor(index);
-        const label = String(row.nppName || row.npp || "");
+        const label = formatChartDateLabel(row.ngay);
         const maxLabelWidth = Math.max(categoryWidth - 12, 44);
         let compactLabel = label;
         while (compactLabel.length > 3 && ctx.measureText(`${compactLabel}...`).width > maxLabelWidth) {
@@ -1131,12 +1147,12 @@ function drawNppCommissionChart(rows) {
     rows.forEach((row, index) => {
         const x = xFor(index);
         const y = orderYFor(row.orderCount || 0);
-        ctx.fillStyle = "#2563eb";
+        ctx.fillStyle = "rgba(66, 133, 244, 0.72)";
         ctx.fillRect(x - barWidth / 2, y, barWidth, padding.top + plotHeight - y);
     });
 
-    ctx.strokeStyle = "#ec4899";
-    ctx.fillStyle = "#ec4899";
+    ctx.strokeStyle = "#f6a21a";
+    ctx.fillStyle = "#f6a21a";
     ctx.lineWidth = 3;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
@@ -1155,7 +1171,7 @@ function drawNppCommissionChart(rows) {
     });
 
     const legendY = 20;
-    [["Số đơn (MDH) - trục trái", "#2563eb"], ["Hoa hồng - trục phải", "#ec4899"]].forEach(([label, color], index) => {
+    [["Số đơn (MDH) - trục trái", "#4285f4"], ["Hoa hồng - trục phải", "#f6a21a"]].forEach(([label, color], index) => {
         const x = padding.left + index * 168;
         if (index === 0) {
             ctx.fillStyle = color;
