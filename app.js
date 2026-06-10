@@ -95,6 +95,7 @@ let nppOptions = [];
 let currentDonHangMdh = "";
 let congViecView = "table";
 let reportData = null;
+let reportSkuPage = 1;
 let currentUser = null;
 let moduleLoadSeq = 0;
 let selectedSheetRows = new Set();
@@ -586,6 +587,19 @@ function toggleRowSelection(sheetRow, checked) {
     updateBulkDeleteButton();
 }
 
+function toggleMultipleRowSelection(sheetRows, checked) {
+    String(sheetRows || "")
+        .split(",")
+        .map(value => Number(value))
+        .filter(Boolean)
+        .forEach(rowNum => {
+            if (checked) selectedSheetRows.add(rowNum);
+            else selectedSheetRows.delete(rowNum);
+        });
+    syncSelectAllCheckbox();
+    updateBulkDeleteButton();
+}
+
 function toggleSelectAllRows(checkbox) {
     const selectableRows = filteredData.map(row => Number(row._sheetRow)).filter(Boolean);
     selectableRows.forEach(rowNum => {
@@ -631,6 +645,7 @@ async function fetchData(seq = moduleLoadSeq) {
             filteredData = [];
             allData = [];
             currentPage = 1;
+            reportSkuPage = 1;
             clearSelectedRows();
             renderHeaders();
             renderTable();
@@ -759,6 +774,39 @@ function sortFilteredDataByNgayDesc() {
     filteredData.sort((a, b) => getDateTime(b[ngayIndex]) - getDateTime(a[ngayIndex]));
 }
 
+function getDonHangSummaryRows(rows = filteredData) {
+    const headers = getHeaders("DON_HANG");
+    const ngayIndex = headers.indexOf("ngay");
+    const mdhIndex = headers.indexOf("mdh");
+    const nppIndex = headers.indexOf("npp");
+    const thanhTienIndex = headers.indexOf("thanh_tien");
+    const groups = new Map();
+    rows.forEach(row => {
+        const mdh = String(row[mdhIndex] || "").trim();
+        const key = mdh || `__row_${row._sheetRow}`;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                ngay: String(row[ngayIndex] || "").trim(),
+                mdh,
+                npp: String(row[nppIndex] || "").trim(),
+                tong_tien: 0,
+                sheetRows: []
+            });
+        }
+        const entry = groups.get(key);
+        entry.tong_tien += parseMoney(row[thanhTienIndex]);
+        entry.sheetRows.push(Number(row._sheetRow));
+        if (getDateTime(row[ngayIndex]) > getDateTime(entry.ngay)) entry.ngay = String(row[ngayIndex] || "").trim();
+        if (!entry.npp && row[nppIndex]) entry.npp = String(row[nppIndex] || "").trim();
+    });
+    return [...groups.values()].sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay));
+}
+
+function getCurrentDisplayRowCount() {
+    if (currentModule === "DON_HANG") return getDonHangSummaryRows().length;
+    return filteredData.length;
+}
+
 function formatDateInput(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -869,7 +917,7 @@ function renderHeaders() {
         head.innerHTML = "";
         return;
     }
-    const headers = currentModule === "DON_HANG" ? [...getHeaders(), "tien_hoa_hong"] : getHeaders();
+    const headers = currentModule === "DON_HANG" ? ["ngay", "mdh", "npp", "tong_tien"] : getHeaders();
     head.innerHTML = `<tr>
         <th class="select-col">
             <input id="selectAllRows" type="checkbox" onchange="toggleSelectAllRows(this)" onclick="event.stopPropagation()" title="Chọn tất cả dòng đang lọc">
@@ -899,6 +947,31 @@ function renderTable() {
 
     const tbody = document.getElementById("tableBody");
     const storageHeaders = getHeaders();
+    if (currentModule === "DON_HANG") {
+        const headers = ["ngay", "mdh", "npp", "tong_tien"];
+        const start = (currentPage - 1) * rowsPerPage;
+        const pageData = getDonHangSummaryRows().slice(start, start + rowsPerPage);
+        tbody.innerHTML = pageData.map(row => {
+            const sheetRows = row.sheetRows.join(",");
+            const allChecked = row.sheetRows.length > 0 && row.sheetRows.every(sheetRow => selectedSheetRows.has(sheetRow));
+            const cells = [
+                row.ngay,
+                row.mdh,
+                getNppDisplayName(row.npp),
+                formatDisplayNumber(row.tong_tien)
+            ].map(value => `<td>${escapeHtml(value)}</td>`).join("");
+            const selectCell = `<td class="select-col">
+                <input class="row-select-checkbox" type="checkbox" data-sheet-row="${escapeHtml(sheetRows)}" ${allChecked ? "checked" : ""} onclick="event.stopPropagation()" onchange="toggleMultipleRowSelection('${escapeJsString(sheetRows)}', this.checked)">
+            </td>`;
+            return `<tr ondblclick="openDonHangForm('${escapeJsString(row.mdh || "")}')">${selectCell}${cells}</tr>`;
+        }).join("");
+        if (!pageData.length) {
+            tbody.innerHTML = `<tr><td colspan="${headers.length + 1}">Chưa có dữ liệu.</td></tr>`;
+        }
+        syncSelectAllCheckbox();
+        renderPagination();
+        return;
+    }
     const headers = currentModule === "DON_HANG" ? [...storageHeaders, "tien_hoa_hong"] : storageHeaders;
     const mdhIndex = storageHeaders.indexOf("mdh");
     const nppIndex = storageHeaders.indexOf("npp");
@@ -940,6 +1013,10 @@ function renderBaoCao() {
     document.getElementById("reportView")?.remove();
     const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
     const reportNppName = row => row?.nppName || row?.npp || "";
+    const skuPageSize = 10;
+    const skuTotalPages = Math.max(Math.ceil(data.skuRows.length / skuPageSize), 1);
+    reportSkuPage = Math.min(Math.max(reportSkuPage, 1), skuTotalPages);
+    const skuPageRows = data.skuRows.slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
     const chartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
     let chartCursor = 0;
@@ -1033,7 +1110,7 @@ function renderBaoCao() {
         </div>
         <div class="report-chart-pair">
             <section class="report-panel commission-chart-panel">
-                <h2>Số đơn & hoa hồng theo ngày</h2>
+                <h2>Tổng tiền theo ngày</h2>
                 ${data.dateRows.length
                     ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
                     : `<div class="report-empty">Chưa có dữ liệu hoa hồng.</div>`}
@@ -1053,7 +1130,7 @@ function renderBaoCao() {
                             </tr>
                         </thead>
                         <tbody>
-                            ${data.skuRows.map(row => `
+                            ${skuPageRows.map(row => `
                                 <tr>
                                     <td>${escapeHtml(row.idSp)}</td>
                                     <td>${escapeHtml(row.productName)}</td>
@@ -1064,16 +1141,34 @@ function renderBaoCao() {
                         </tbody>
                     </table>
                 </div>
+                ${data.skuRows.length > skuPageSize ? `
+                    <div class="report-table-pagination">
+                        <button type="button" class="pagination-btn" onclick="changeReportSkuPage(-1)" ${reportSkuPage === 1 ? "disabled" : ""}>
+                            <i data-lucide="chevron-left" style="width:16px;"></i> Trước
+                        </button>
+                        <div class="page-info">Trang ${reportSkuPage} / ${skuTotalPages} (${data.skuRows.length} dòng)</div>
+                        <button type="button" class="pagination-btn" onclick="changeReportSkuPage(1)" ${reportSkuPage === skuTotalPages ? "disabled" : ""}>
+                            Tiếp <i data-lucide="chevron-right" style="width:16px;"></i>
+                        </button>
+                    </div>
+                ` : ""}
             </section>
         </div>
     `;
     document.querySelector(".main-content").insertBefore(report, document.getElementById("pagination"));
     if (data.dateRows.length) {
-        requestAnimationFrame(() => drawOrderCommissionByDateChart([...data.dateRows].sort((a, b) => getDateTime(a.ngay) - getDateTime(b.ngay))));
+        requestAnimationFrame(() => drawDailySalesChart([...data.dateRows].sort((a, b) => getDateTime(a.ngay) - getDateTime(b.ngay))));
     }
 }
 
-function drawOrderCommissionByDateChart(rows) {
+function changeReportSkuPage(delta) {
+    const totalRows = reportData?.skuRows?.length || 0;
+    const totalPages = Math.max(Math.ceil(totalRows / 10), 1);
+    reportSkuPage = Math.min(Math.max(reportSkuPage + delta, 1), totalPages);
+    renderBaoCao();
+}
+
+function drawDailySalesChart(rows) {
     const canvas = document.getElementById("commissionLineChart");
     if (!canvas) return;
     const containerWidth = canvas.parentElement?.clientWidth || 640;
@@ -1092,9 +1187,7 @@ function drawOrderCommissionByDateChart(rows) {
     const padding = { top: 46, right: 70, bottom: 52, left: 70 };
     const plotWidth = cssWidth - padding.left - padding.right;
     const plotHeight = cssHeight - padding.top - padding.bottom;
-    const maxOrders = Math.max(...rows.map(row => row.orderCount || 0), 1);
-    const orderAxisMax = maxOrders <= 5 ? 5 : Math.ceil(maxOrders / 5) * 5;
-    const commissionAxisMax = Math.max(...rows.map(row => row.commission || 0), 1) * 1.1;
+    const salesAxisMax = Math.max(...rows.map(row => row.sales || 0), 1) * 1.1;
     const formatAxis = value => new Intl.NumberFormat("vi-VN", {
         notation: value >= 1000000 ? "compact" : "standard",
         maximumFractionDigits: 1
@@ -1107,24 +1200,19 @@ function drawOrderCommissionByDateChart(rows) {
     ctx.lineWidth = 1;
     for (let step = 0; step <= 5; step += 1) {
         const y = padding.top + (plotHeight / 5) * step;
-        const orderValue = orderAxisMax * (1 - step / 5);
-        const commissionValue = commissionAxisMax * (1 - step / 5);
+        const salesValue = salesAxisMax * (1 - step / 5);
         ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(cssWidth - padding.right, y);
         ctx.stroke();
         ctx.textAlign = "right";
-        ctx.fillStyle = "#4285f4";
-        ctx.fillText(formatAxis(orderValue), padding.left - 9, y);
-        ctx.textAlign = "left";
-        ctx.fillStyle = "#f6a21a";
-        ctx.fillText(formatAxis(commissionValue), cssWidth - padding.right + 9, y);
+        ctx.fillStyle = "#164e63";
+        ctx.fillText(formatAxis(salesValue), padding.left - 9, y);
     }
 
     const categoryWidth = plotWidth / Math.max(rows.length, 1);
     const xFor = index => padding.left + categoryWidth * (index + 0.5);
-    const orderYFor = value => padding.top + plotHeight - ((Number(value) || 0) / orderAxisMax) * plotHeight;
-    const commissionYFor = value => padding.top + plotHeight - ((Number(value) || 0) / commissionAxisMax) * plotHeight;
+    const salesYFor = value => padding.top + plotHeight - ((Number(value) || 0) / salesAxisMax) * plotHeight;
 
     ctx.save();
     ctx.textAlign = "center";
@@ -1143,51 +1231,35 @@ function drawOrderCommissionByDateChart(rows) {
     });
     ctx.restore();
 
-    const barWidth = Math.min(42, Math.max(18, plotWidth / Math.max(rows.length * 2.4, 1)));
-    rows.forEach((row, index) => {
-        const x = xFor(index);
-        const y = orderYFor(row.orderCount || 0);
-        ctx.fillStyle = "rgba(66, 133, 244, 0.72)";
-        ctx.fillRect(x - barWidth / 2, y, barWidth, padding.top + plotHeight - y);
-    });
-
-    ctx.strokeStyle = "#f6a21a";
-    ctx.fillStyle = "#f6a21a";
+    ctx.strokeStyle = "#4285f4";
+    ctx.fillStyle = "#4285f4";
     ctx.lineWidth = 3;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.beginPath();
     rows.forEach((row, index) => {
         const x = xFor(index);
-        const y = commissionYFor(row.commission);
+        const y = salesYFor(row.sales);
         if (index === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
     });
     ctx.stroke();
     rows.forEach((row, index) => {
         ctx.beginPath();
-        ctx.arc(xFor(index), commissionYFor(row.commission), 4, 0, Math.PI * 2);
+        ctx.arc(xFor(index), salesYFor(row.sales), 4, 0, Math.PI * 2);
         ctx.fill();
     });
 
     const legendY = 20;
-    [["Số đơn (MDH) - trục trái", "#4285f4"], ["Hoa hồng - trục phải", "#f6a21a"]].forEach(([label, color], index) => {
-        const x = padding.left + index * 168;
-        if (index === 0) {
-            ctx.fillStyle = color;
-            ctx.fillRect(x, legendY - 6, 24, 12);
-        } else {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(x, legendY);
-            ctx.lineTo(x + 24, legendY);
-            ctx.stroke();
-        }
-        ctx.fillStyle = "#475569";
-        ctx.textAlign = "left";
-        ctx.fillText(label, x + 31, legendY);
-    });
+    ctx.strokeStyle = "#4285f4";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, legendY);
+    ctx.lineTo(padding.left + 24, legendY);
+    ctx.stroke();
+    ctx.fillStyle = "#475569";
+    ctx.textAlign = "left";
+    ctx.fillText("Tổng tiền", padding.left + 31, legendY);
 }
 
 function renderCongViecKanban() {
@@ -1234,7 +1306,7 @@ function renderPagination() {
         document.getElementById("pagination").innerHTML = "";
         return;
     }
-    const totalRows = filteredData.length;
+    const totalRows = getCurrentDisplayRowCount();
     if (currentModule === "CONG_VIEC" && congViecView === "kanban") {
         document.getElementById("pagination").innerHTML = "";
         return;
@@ -1258,7 +1330,7 @@ function renderPagination() {
 }
 
 function changePage(delta) {
-    const totalRows = filteredData.length;
+    const totalRows = getCurrentDisplayRowCount();
     const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
     currentPage = Math.min(Math.max(currentPage + delta, 1), totalPages);
     renderTable();
@@ -1331,6 +1403,29 @@ async function writeRecordRow(row, sheetRow) {
         method: "PUT",
         body: JSON.stringify({ values: [normalizeRow(row)] })
     });
+}
+
+async function updateDonHangProductId(oldId, newId) {
+    const fromId = String(oldId || "").trim();
+    const toId = String(newId || "").trim();
+    if (!fromId || !toId || fromId === toId) return 0;
+    const headers = getHeaders("DON_HANG");
+    const idSpIndex = headers.indexOf("id_sp");
+    if (idSpIndex < 0) return 0;
+    const rows = await loadModuleRows("DON_HANG");
+    const col = colName(idSpIndex);
+    const updates = rows
+        .filter(row => String(row[idSpIndex] || "").trim() === fromId)
+        .map(row => ({
+            range: `${quoteSheetName("DON_HANG")}!${col}${row._sheetRow}`,
+            values: [[toId]]
+        }));
+    if (!updates.length) return 0;
+    await sheetsFetch("/values:batchUpdate?valueInputOption=RAW", {
+        method: "POST",
+        body: JSON.stringify({ data: updates })
+    });
+    return updates.length;
 }
 
 async function appendRecordRows(rows) {
@@ -1561,7 +1656,8 @@ function renderFormFields(row = null) {
         const rawValue = row?.[index] ?? (header === "id" ? generateNextId() : (header === "ngay" ? new Date().toISOString().slice(0, 10) : ""));
         const value = escapeHtml(rawValue);
         if (header === "id") {
-            return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="text" value="${value}" ${row ? "readonly" : ""}></label>`;
+            const readonly = row && currentModule !== "DS_SP" ? "readonly" : "";
+            return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="text" value="${value}" ${readonly}></label>`;
         }
         if (currentModule === "CONG_VIEC" && header === "tinh_trang") {
             return `<label class="wide-field"><span>${escapeHtml(header.toUpperCase())}</span>${renderOptionButtons(`formField_${index}`, rawValue, statusOptions)}</label>`;
@@ -1631,7 +1727,9 @@ async function saveRecordFromForm(event) {
     if (!row[0]) row[0] = generateNextId();
 
     const editingSheetRow = Number(document.getElementById("editingSheetRow").value);
-    const existing = !editingSheetRow && allData.find(item => getRowId(item) === row[0]);
+    const oldRow = editingSheetRow ? allData.find(item => Number(item._sheetRow) === editingSheetRow) : null;
+    const oldDsSpId = currentModule === "DS_SP" ? getRowId(oldRow) : "";
+    const existing = allData.find(item => getRowId(item) === row[0] && Number(item._sheetRow) !== editingSheetRow);
     if (existing) {
         alert(`ID "${row[0]}" đã tồn tại trong module ${currentModule}.`);
         return;
@@ -1643,6 +1741,9 @@ async function saveRecordFromForm(event) {
             await writeRecordRow(row, editingSheetRow);
         } else {
             await appendRecordRows([row]);
+        }
+        if (currentModule === "DS_SP" && editingSheetRow && oldDsSpId && oldDsSpId !== row[0]) {
+            await updateDonHangProductId(oldDsSpId, row[0]);
         }
         closeProductForm();
         await fetchData();

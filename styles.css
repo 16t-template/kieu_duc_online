@@ -867,6 +867,15 @@ button {
     text-align: center;
 }
 
+.report-table-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 4px;
+    flex-wrap: wrap;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
