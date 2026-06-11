@@ -310,6 +310,29 @@ h1 {
     background: #eef2ff;
 }
 
+.filter-summary-box {
+    min-height: 38px;
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.filter-summary-box span {
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.filter-summary-box strong {
+    color: #164e63;
+    font-size: 0.95rem;
+}
+
 .view-toggle-btn {
     min-height: 38px;
     display: flex;
@@ -606,12 +629,17 @@ button {
 }
 
 .sku-report-panel {
+    order: 4;
+    grid-column: 1 / -1;
+}
+
+.sales-commission-panel {
     order: 3;
     grid-column: 1 / -1;
 }
 
 .best-npp-panel {
-    order: 4;
+    order: 5;
     grid-column: 1 / -1;
 }
 
@@ -641,6 +669,12 @@ button {
 
 .best-npp-panel h2 {
     color: #164e63;
+}
+
+.report-total-row td {
+    background: #f8fafc;
+    color: #164e63;
+    font-weight: 800;
 }
 
 .report-panel th {
