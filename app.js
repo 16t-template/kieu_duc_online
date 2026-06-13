@@ -1187,33 +1187,6 @@ function renderBaoCao() {
             </article>
         </div>
         <div class="report-grid dashboard-report-group">
-            <section class="report-panel best-npp-panel">
-                <h2>Mã bán tốt nhất theo NPP</h2>
-                <div class="report-table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>NPP</th>
-                                <th>MÃ BÁN TỐT NHẤT</th>
-                                <th>TÊN</th>
-                                <th>SLG</th>
-                                <th>DOANH SỐ</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.nppRows.map(row => `
-                                <tr>
-                                    <td>${escapeHtml(reportNppName(row))}</td>
-                                    <td>${escapeHtml(row.bestSku?.idSp || "")}</td>
-                                    <td>${escapeHtml(row.bestSku?.productName || "")}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.bestSku?.quantity || 0))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.bestSku?.sales || 0))}</td>
-                                </tr>
-                            `).join("") || `<tr><td colspan="5">Chưa có dữ liệu.</td></tr>`}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
             <section class="report-panel npp-chart-panel">
                 <h2>Biểu đồ doanh số NPP</h2>
                 <div class="sales-chart">
@@ -1245,8 +1218,8 @@ function renderBaoCao() {
             <section class="report-panel commission-chart-panel">
                 <h2>Tổng tiền theo ngày</h2>
                 ${data.dateRows.length
-                    ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
-                    : `<div class="report-empty">Chưa có dữ liệu hoa hồng.</div>`}
+            ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
+            : `<div class="report-empty">Chưa có dữ liệu hoa hồng.</div>`}
             </section>
         </div>
         <div class="report-grid dashboard-report-group">
@@ -1278,7 +1251,7 @@ function renderBaoCao() {
                 </div>
             </section>
             <section class="report-panel sku-report-panel">
-                <h2>Bảng ID_SP</h2>
+                <h2>SP Bán Chạy</h2>
                 <div class="report-table-wrap">
                     <table>
                         <thead>
@@ -1442,8 +1415,8 @@ function renderCongViecKanban() {
                 </header>
                 <div class="kanban-cards" data-kanban-status="${escapeHtml(status)}" ondragover="allowKanbanDrop(event)" ondragleave="clearKanbanDrop(event)" ondrop="dropCongViecCard(event)">
                     ${cards.map(row => {
-                        const rowIndex = filteredData.indexOf(row);
-                        return `
+            const rowIndex = filteredData.indexOf(row);
+            return `
                             <article class="kanban-card" draggable="true" data-sheet-row="${row._sheetRow}" ondragstart="dragCongViecCard(event)" ondragend="endCongViecDrag(event)" ondblclick="openRecordForm(${rowIndex})">
                                 <h3>${escapeHtml(row[titleIndex] || "Không tên")}</h3>
                                 <p>${escapeHtml(row[contentIndex] || "")}</p>
@@ -1454,7 +1427,7 @@ function renderCongViecKanban() {
                                 ${row[noteIndex] ? `<small>${escapeHtml(row[noteIndex])}</small>` : ""}
                             </article>
                         `;
-                    }).join("") || `<div class="kanban-empty">Không có việc</div>`}
+        }).join("") || `<div class="kanban-empty">Không có việc</div>`}
                 </div>
             </section>
         `;
