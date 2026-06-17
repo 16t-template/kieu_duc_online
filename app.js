@@ -41,8 +41,8 @@ sR2Sh8e3h3Knd6j1tceRIFU=
         DON_HANG: {
             label: "Đơn hàng",
             icon: "shopping-cart",
-            headers: ["id", "ngay", "mdh", "npp", "id_sp", "ten", "don_gia", "slg", "thanh_tien"],
-            numericHeaders: ["don_gia", "slg", "thanh_tien"]
+            headers: ["id", "ngay", "mdh", "npp", "id_sp", "ten", "don_gia", "slg", "thanh_tien", "chiet_khau", "tien_hang"],
+            numericHeaders: ["don_gia", "slg", "thanh_tien", "chiet_khau", "tien_hang"]
         },
         CONG_NO: {
             label: "Công nợ",
@@ -813,6 +813,7 @@ function getDonHangSummaryRows(rows = filteredData) {
     const mdhIndex = headers.indexOf("mdh");
     const nppIndex = headers.indexOf("npp");
     const thanhTienIndex = headers.indexOf("thanh_tien");
+    const tienHangIndex = headers.indexOf("tien_hang");
     const groups = new Map();
     rows.forEach(row => {
         const mdh = String(row[mdhIndex] || "").trim();
@@ -827,7 +828,8 @@ function getDonHangSummaryRows(rows = filteredData) {
             });
         }
         const entry = groups.get(key);
-        entry.tong_tien += parseMoney(row[thanhTienIndex]);
+        const itemTotal = row[tienHangIndex] !== undefined && row[tienHangIndex] !== "" ? parseMoney(row[tienHangIndex]) : parseMoney(row[thanhTienIndex]);
+        entry.tong_tien += itemTotal;
         entry.sheetRows.push(Number(row._sheetRow));
         if (getDateTime(row[ngayIndex]) > getDateTime(entry.ngay)) entry.ngay = String(row[ngayIndex] || "").trim();
         if (!entry.npp && row[nppIndex]) entry.npp = String(row[nppIndex] || "").trim();
@@ -1305,7 +1307,7 @@ function drawDailySalesChart(rows) {
     const canvas = document.getElementById("commissionLineChart");
     if (!canvas) return;
     const containerWidth = canvas.parentElement?.clientWidth || 640;
-    const cssWidth = Math.max(containerWidth, rows.length * 90 + 110, 420);
+    const cssWidth = Math.max(containerWidth, 420);
     const cssHeight = 300;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(cssWidth * dpr);
@@ -1674,6 +1676,8 @@ function renderDonHangForm(rows = []) {
                             <th>ĐƠN GIÁ</th>
                             <th>SLG</th>
                             <th>THÀNH TIỀN</th>
+                            <th>CHIẾT KHẤU (%)</th>
+                            <th>TIỀN HÀNG</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -1695,6 +1699,8 @@ function renderDonHangItemRow(row, index) {
     const donGiaIndex = headers.indexOf("don_gia");
     const slgIndex = headers.indexOf("slg");
     const thanhTienIndex = headers.indexOf("thanh_tien");
+    const chietKhauIndex = headers.indexOf("chiet_khau");
+    const tienHangIndex = headers.indexOf("tien_hang");
     return `
         <tr data-order-item="${index}">
             <td>
@@ -1705,6 +1711,8 @@ function renderDonHangItemRow(row, index) {
             <td><input data-order-field="don_gia" type="text" value="${escapeHtml(row[donGiaIndex] || "")}" readonly></td>
             <td><input data-order-field="slg" type="text" value="${escapeHtml(row[slgIndex] || "")}" oninput="recalculateDonHangItems()"></td>
             <td><input data-order-field="thanh_tien" type="text" value="${escapeHtml(row[thanhTienIndex] || "")}" readonly></td>
+            <td><input data-order-field="chiet_khau" type="text" value="${escapeHtml(row[chietKhauIndex] || "")}" oninput="recalculateDonHangItems()" placeholder="%"></td>
+            <td><input data-order-field="tien_hang" type="text" value="${escapeHtml(row[tienHangIndex] || "")}" readonly></td>
             <td><button type="button" class="icon-btn" onclick="removeDonHangItem(this)" title="Xóa sản phẩm"><i data-lucide="trash-2" style="width:16px;"></i></button></td>
         </tr>
     `;
@@ -1756,9 +1764,21 @@ function recalculateDonHangItems() {
         const donGiaInput = row.querySelector('[data-order-field="don_gia"]');
         const slgInput = row.querySelector('[data-order-field="slg"]');
         const thanhTienInput = row.querySelector('[data-order-field="thanh_tien"]');
-        const lineTotal = Math.round(parseMoney(donGiaInput?.value) * parseMoney(slgInput?.value) * 100) / 100;
-        if (thanhTienInput) thanhTienInput.value = lineTotal || "";
-        total += lineTotal || 0;
+        const chietKhauInput = row.querySelector('[data-order-field="chiet_khau"]');
+        const tienHangInput = row.querySelector('[data-order-field="tien_hang"]');
+        
+        const lineThanhTien = Math.round(parseMoney(donGiaInput?.value) * parseMoney(slgInput?.value) * 100) / 100;
+        if (thanhTienInput) thanhTienInput.value = lineThanhTien || "";
+        
+        const chietKhauStr = String(chietKhauInput?.value || "").trim();
+        let lineTienHang = lineThanhTien;
+        if (chietKhauStr !== "") {
+            const chietKhauPercent = parseMoney(chietKhauStr);
+            lineTienHang = Math.round((lineThanhTien - (lineThanhTien * chietKhauPercent / 100)) * 100) / 100;
+        }
+        
+        if (tienHangInput) tienHangInput.value = lineTienHang || "";
+        total += lineTienHang || 0;
     });
     const totalEl = document.getElementById("donHangTotal");
     if (totalEl) totalEl.innerText = formatDisplayNumber(total);
@@ -1929,7 +1949,9 @@ async function saveDonHangForm() {
         const donGia = String(item.querySelector('[data-order-field="don_gia"]')?.value || "").trim();
         const slg = String(item.querySelector('[data-order-field="slg"]')?.value || "").trim();
         const thanhTien = String(item.querySelector('[data-order-field="thanh_tien"]')?.value || "").trim();
-        return [id, ngay, mdh, npp, idSp, ten, donGia, slg, thanhTien];
+        const chietKhau = String(item.querySelector('[data-order-field="chiet_khau"]')?.value || "").trim();
+        const tienHang = String(item.querySelector('[data-order-field="tien_hang"]')?.value || "").trim();
+        return [id, ngay, mdh, npp, idSp, ten, donGia, slg, thanhTien, chietKhau, tienHang];
     }).filter(row => row[4] && parseMoney(row[7]) > 0);
 
     if (!rows.length) {
