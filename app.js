@@ -41,8 +41,8 @@ sR2Sh8e3h3Knd6j1tceRIFU=
         DON_HANG: {
             label: "Đơn hàng",
             icon: "shopping-cart",
-            headers: ["id", "ngay", "mdh", "npp", "id_sp", "ten", "don_gia", "slg", "thanh_tien", "chiet_khau", "tien_hang"],
-            numericHeaders: ["don_gia", "slg", "thanh_tien", "chiet_khau", "tien_hang"]
+            headers: ["id", "ngay", "mdh", "npp", "id_sp", "ten", "don_gia", "slg", "thanh_tien", "chiet_khau", "tien_chiet_khau", "tien_hang"],
+            numericHeaders: ["don_gia", "slg", "thanh_tien", "chiet_khau", "tien_chiet_khau", "tien_hang"]
         },
         CONG_NO: {
             label: "Công nợ",
@@ -1677,6 +1677,7 @@ function renderDonHangForm(rows = []) {
                             <th>SLG</th>
                             <th>THÀNH TIỀN</th>
                             <th>CHIẾT KHẤU (%)</th>
+                            <th>TIỀN CK</th>
                             <th>TIỀN HÀNG</th>
                             <th></th>
                         </tr>
@@ -1700,6 +1701,7 @@ function renderDonHangItemRow(row, index) {
     const slgIndex = headers.indexOf("slg");
     const thanhTienIndex = headers.indexOf("thanh_tien");
     const chietKhauIndex = headers.indexOf("chiet_khau");
+    const tienChietKhauIndex = headers.indexOf("tien_chiet_khau");
     const tienHangIndex = headers.indexOf("tien_hang");
     return `
         <tr data-order-item="${index}">
@@ -1708,11 +1710,12 @@ function renderDonHangItemRow(row, index) {
                 <input data-order-field="id_sp" type="text" list="dsSpOptions" value="${escapeHtml(row[idSpIndex] || "")}" oninput="updateDonHangProduct(this)">
             </td>
             <td><input data-order-field="ten" type="text" value="${escapeHtml(row[tenIndex] || "")}" readonly></td>
-            <td><input data-order-field="don_gia" type="text" value="${escapeHtml(row[donGiaIndex] || "")}" readonly></td>
-            <td><input data-order-field="slg" type="text" value="${escapeHtml(row[slgIndex] || "")}" oninput="recalculateDonHangItems()"></td>
-            <td><input data-order-field="thanh_tien" type="text" value="${escapeHtml(row[thanhTienIndex] || "")}" readonly></td>
-            <td><input data-order-field="chiet_khau" type="text" value="${escapeHtml(row[chietKhauIndex] || "")}" oninput="recalculateDonHangItems()" placeholder="%"></td>
-            <td><input data-order-field="tien_hang" type="text" value="${escapeHtml(row[tienHangIndex] || "")}" readonly></td>
+            <td><input data-order-field="don_gia" type="text" value="${escapeHtml(formatDisplayNumber(row[donGiaIndex]) || "")}" readonly></td>
+            <td><input data-order-field="slg" type="text" value="${escapeHtml(row[slgIndex] || "")}" oninput="recalculateDonHangItems(this)"></td>
+            <td><input data-order-field="thanh_tien" type="text" value="${escapeHtml(formatDisplayNumber(row[thanhTienIndex]) || "")}" readonly></td>
+            <td><input data-order-field="chiet_khau" type="text" value="${escapeHtml(row[chietKhauIndex] || "")}" oninput="recalculateDonHangItems(this)" placeholder="%"></td>
+            <td><input data-order-field="tien_chiet_khau" type="text" value="${escapeHtml(formatDisplayNumber(row[tienChietKhauIndex]) || "")}" oninput="recalculateDonHangItems(this)" onblur="this.value = formatDisplayNumber(this.value) || ''"></td>
+            <td><input data-order-field="tien_hang" type="text" value="${escapeHtml(formatDisplayNumber(row[tienHangIndex]) || "")}" readonly></td>
             <td><button type="button" class="icon-btn" onclick="removeDonHangItem(this)" title="Xóa sản phẩm"><i data-lucide="trash-2" style="width:16px;"></i></button></td>
         </tr>
     `;
@@ -1754,30 +1757,57 @@ function updateDonHangProduct(input) {
     const row = input.closest("tr");
     if (!row) return;
     row.querySelector('[data-order-field="ten"]').value = product?.ten || "";
-    row.querySelector('[data-order-field="don_gia"]').value = product?.gia || "";
+    row.querySelector('[data-order-field="don_gia"]').value = product?.gia ? formatDisplayNumber(product.gia) : "";
     recalculateDonHangItems();
 }
 
-function recalculateDonHangItems() {
+function recalculateDonHangItems(triggerInput = null) {
     let total = 0;
     document.querySelectorAll("#donHangItemsBody tr").forEach(row => {
         const donGiaInput = row.querySelector('[data-order-field="don_gia"]');
         const slgInput = row.querySelector('[data-order-field="slg"]');
         const thanhTienInput = row.querySelector('[data-order-field="thanh_tien"]');
         const chietKhauInput = row.querySelector('[data-order-field="chiet_khau"]');
+        const tienChietKhauInput = row.querySelector('[data-order-field="tien_chiet_khau"]');
         const tienHangInput = row.querySelector('[data-order-field="tien_hang"]');
         
         const lineThanhTien = Math.round(parseMoney(donGiaInput?.value) * parseMoney(slgInput?.value) * 100) / 100;
-        if (thanhTienInput) thanhTienInput.value = lineThanhTien || "";
+        if (thanhTienInput) thanhTienInput.value = formatDisplayNumber(lineThanhTien) || "";
         
-        const chietKhauStr = String(chietKhauInput?.value || "").trim();
-        let lineTienHang = lineThanhTien;
-        if (chietKhauStr !== "") {
-            const chietKhauPercent = parseMoney(chietKhauStr);
-            lineTienHang = Math.round((lineThanhTien - (lineThanhTien * chietKhauPercent / 100)) * 100) / 100;
+        let chietKhauPercent = parseMoney(chietKhauInput?.value);
+        let tienChietKhau = parseMoney(tienChietKhauInput?.value);
+        
+        if (triggerInput && triggerInput === chietKhauInput) {
+            if (chietKhauInput.value.trim() === "") {
+                tienChietKhau = 0;
+                if (tienChietKhauInput) tienChietKhauInput.value = "";
+            } else {
+                tienChietKhau = Math.round(lineThanhTien * (chietKhauPercent / 100) * 100) / 100;
+                if (tienChietKhauInput) tienChietKhauInput.value = formatDisplayNumber(tienChietKhau) || "0";
+            }
+        } else if (triggerInput && triggerInput === tienChietKhauInput) {
+            if (tienChietKhauInput.value.trim() === "") {
+                chietKhauPercent = 0;
+                if (chietKhauInput) chietKhauInput.value = "";
+            } else {
+                chietKhauPercent = lineThanhTien ? Math.round((tienChietKhau / lineThanhTien) * 100 * 100) / 100 : 0;
+                if (chietKhauInput) chietKhauInput.value = chietKhauPercent || 0;
+            }
+        } else {
+            if (chietKhauInput && chietKhauInput.value.trim() !== "") {
+                tienChietKhau = Math.round(lineThanhTien * (chietKhauPercent / 100) * 100) / 100;
+                if (tienChietKhauInput) tienChietKhauInput.value = formatDisplayNumber(tienChietKhau) || "0";
+            } else if (tienChietKhauInput && tienChietKhauInput.value.trim() !== "") {
+                chietKhauPercent = lineThanhTien ? Math.round((tienChietKhau / lineThanhTien) * 100 * 100) / 100 : 0;
+                if (chietKhauInput) chietKhauInput.value = chietKhauPercent || 0;
+                if (tienChietKhauInput) tienChietKhauInput.value = formatDisplayNumber(tienChietKhau) || "0";
+            } else {
+                tienChietKhau = 0;
+            }
         }
         
-        if (tienHangInput) tienHangInput.value = lineTienHang || "";
+        const lineTienHang = Math.round((lineThanhTien - tienChietKhau) * 100) / 100;
+        if (tienHangInput) tienHangInput.value = formatDisplayNumber(lineTienHang) || "";
         total += lineTienHang || 0;
     });
     const totalEl = document.getElementById("donHangTotal");
@@ -1950,8 +1980,9 @@ async function saveDonHangForm() {
         const slg = String(item.querySelector('[data-order-field="slg"]')?.value || "").trim();
         const thanhTien = String(item.querySelector('[data-order-field="thanh_tien"]')?.value || "").trim();
         const chietKhau = String(item.querySelector('[data-order-field="chiet_khau"]')?.value || "").trim();
+        const tienChietKhau = String(item.querySelector('[data-order-field="tien_chiet_khau"]')?.value || "").trim();
         const tienHang = String(item.querySelector('[data-order-field="tien_hang"]')?.value || "").trim();
-        return [id, ngay, mdh, npp, idSp, ten, donGia, slg, thanhTien, chietKhau, tienHang];
+        return [id, ngay, mdh, npp, idSp, ten, donGia, slg, thanhTien, chietKhau, tienChietKhau, tienHang];
     }).filter(row => row[4] && parseMoney(row[7]) > 0);
 
     if (!rows.length) {
