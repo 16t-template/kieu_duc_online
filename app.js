@@ -420,8 +420,6 @@ async function buildBaoCaoData() {
     const idSpIndex = donHangHeaders.indexOf("id_sp");
     const tenIndex = donHangHeaders.indexOf("ten");
     const slgIndex = donHangHeaders.indexOf("slg");
-    const thanhTienIndex = donHangHeaders.indexOf("thanh_tien");
-    const tienHangIndex = donHangHeaders.indexOf("tien_hang");
     const filterDateFrom = document.getElementById("reportDateFrom")?.value || "";
     const filterDateTo = document.getElementById("reportDateTo")?.value || "";
     const filterNpp = String(document.getElementById("reportNpp")?.value || "").trim().toLowerCase();
@@ -448,7 +446,7 @@ async function buildBaoCaoData() {
         if (filterNpp && npp.toLowerCase() !== filterNpp) return;
         if (filterIdSp && idSp.toLowerCase() !== filterIdSp) return;
         const quantity = parseMoney(row[slgIndex]);
-        const sales = row[tienHangIndex] !== undefined && row[tienHangIndex] !== "" ? parseMoney(row[tienHangIndex]) : parseMoney(row[thanhTienIndex]);
+        const sales = getDonHangItemSales(row, donHangHeaders);
         totalSales += sales;
         totalQuantity += quantity;
         if (idSp) skuSet.add(idSp);
@@ -817,8 +815,6 @@ function getDonHangSummaryRows(rows = filteredData) {
     const ngayIndex = headers.indexOf("ngay");
     const mdhIndex = headers.indexOf("mdh");
     const nppIndex = headers.indexOf("npp");
-    const thanhTienIndex = headers.indexOf("thanh_tien");
-    const tienHangIndex = headers.indexOf("tien_hang");
     const groups = new Map();
     rows.forEach(row => {
         const mdh = String(row[mdhIndex] || "").trim();
@@ -833,8 +829,7 @@ function getDonHangSummaryRows(rows = filteredData) {
             });
         }
         const entry = groups.get(key);
-        const itemTotal = row[tienHangIndex] !== undefined && row[tienHangIndex] !== "" ? parseMoney(row[tienHangIndex]) : parseMoney(row[thanhTienIndex]);
-        entry.tong_tien += itemTotal;
+        entry.tong_tien += getDonHangItemSales(row, headers);
         entry.sheetRows.push(Number(row._sheetRow));
         if (getDateTime(row[ngayIndex]) > getDateTime(entry.ngay)) entry.ngay = String(row[ngayIndex] || "").trim();
         if (!entry.npp && row[nppIndex]) entry.npp = String(row[nppIndex] || "").trim();
@@ -887,14 +882,19 @@ function updateCongNoTotalBox() {
     if (valueEl) valueEl.innerText = formatDisplayNumber(getCongNoTotal());
 }
 
-function getDonHangTotal(rows = filteredData) {
-    const headers = getHeaders("DON_HANG");
+function getDonHangItemSales(row, headers = getHeaders("DON_HANG")) {
     const thanhTienIndex = headers.indexOf("thanh_tien");
     const tienHangIndex = headers.indexOf("tien_hang");
-    return rows.reduce((sum, row) => {
-        const itemTotal = row[tienHangIndex] !== undefined && row[tienHangIndex] !== "" ? parseMoney(row[tienHangIndex]) : parseMoney(row[thanhTienIndex]);
-        return sum + itemTotal;
-    }, 0);
+    const tienChietKhauIndex = headers.indexOf("tien_chiet_khau");
+    if (tienHangIndex >= 0 && row[tienHangIndex] !== undefined && row[tienHangIndex] !== "") {
+        return parseMoney(row[tienHangIndex]);
+    }
+    return parseMoney(row[thanhTienIndex]) - parseMoney(row[tienChietKhauIndex]);
+}
+
+function getDonHangTotal(rows = filteredData) {
+    const headers = getHeaders("DON_HANG");
+    return rows.reduce((sum, row) => sum + getDonHangItemSales(row, headers), 0);
 }
 
 function updateDonHangTotalBox() {
@@ -1086,7 +1086,6 @@ function renderTable() {
     const headers = currentModule === "DON_HANG" ? [...storageHeaders, "tien_hoa_hong"] : storageHeaders.filter(header => header !== "id");
     const mdhIndex = storageHeaders.indexOf("mdh");
     const nppIndex = storageHeaders.indexOf("npp");
-    const thanhTienIndex = storageHeaders.indexOf("thanh_tien");
     const start = (currentPage - 1) * rowsPerPage;
     const pageData = filteredData.slice(start, start + rowsPerPage);
     const congNoBalanceMap = currentModule === "CONG_NO" ? getCongNoBalanceMap() : null;
@@ -1094,7 +1093,7 @@ function renderTable() {
         const cells = headers.map((header, index) => {
             const sourceIndex = storageHeaders.indexOf(header);
             let value = header === "tien_hoa_hong"
-                ? parseMoney(row[thanhTienIndex]) * getNppCommissionRate(row[nppIndex])
+                ? getDonHangItemSales(row, storageHeaders) * getNppCommissionRate(row[nppIndex])
                 : row[sourceIndex] || "";
             if (currentModule === "CONG_NO" && header === "cong_no_con_lai") {
                 value = congNoBalanceMap?.get(Number(row._sheetRow)) ?? "";
