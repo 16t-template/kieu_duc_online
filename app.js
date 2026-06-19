@@ -421,6 +421,7 @@ async function buildBaoCaoData() {
     const tenIndex = donHangHeaders.indexOf("ten");
     const slgIndex = donHangHeaders.indexOf("slg");
     const thanhTienIndex = donHangHeaders.indexOf("thanh_tien");
+    const tienHangIndex = donHangHeaders.indexOf("tien_hang");
     const filterDateFrom = document.getElementById("reportDateFrom")?.value || "";
     const filterDateTo = document.getElementById("reportDateTo")?.value || "";
     const filterNpp = String(document.getElementById("reportNpp")?.value || "").trim().toLowerCase();
@@ -447,7 +448,7 @@ async function buildBaoCaoData() {
         if (filterNpp && npp.toLowerCase() !== filterNpp) return;
         if (filterIdSp && idSp.toLowerCase() !== filterIdSp) return;
         const quantity = parseMoney(row[slgIndex]);
-        const sales = parseMoney(row[thanhTienIndex]);
+        const sales = row[tienHangIndex] !== undefined && row[tienHangIndex] !== "" ? parseMoney(row[tienHangIndex]) : parseMoney(row[thanhTienIndex]);
         totalSales += sales;
         totalQuantity += quantity;
         if (idSp) skuSet.add(idSp);
@@ -725,6 +726,10 @@ async function renderFilterPanel() {
                 ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
             </select></label>
             <label><span>MDH</span><input id="filterMdh" type="text" placeholder="Lọc MDH..." oninput="filterTable()"></label>
+            <div id="donHangTotalBox" class="filter-summary-box">
+                <span>Tổng tiền</span>
+                <strong>0</strong>
+            </div>
         `;
         if (!nppOptions.length) {
             loadNppOptions().then(() => {
@@ -880,6 +885,23 @@ function updateCongNoTotalBox() {
     if (!box) return;
     const valueEl = box.querySelector("strong");
     if (valueEl) valueEl.innerText = formatDisplayNumber(getCongNoTotal());
+}
+
+function getDonHangTotal(rows = filteredData) {
+    const headers = getHeaders("DON_HANG");
+    const thanhTienIndex = headers.indexOf("thanh_tien");
+    const tienHangIndex = headers.indexOf("tien_hang");
+    return rows.reduce((sum, row) => {
+        const itemTotal = row[tienHangIndex] !== undefined && row[tienHangIndex] !== "" ? parseMoney(row[tienHangIndex]) : parseMoney(row[thanhTienIndex]);
+        return sum + itemTotal;
+    }, 0);
+}
+
+function updateDonHangTotalBox() {
+    const box = document.getElementById("donHangTotalBox");
+    if (!box) return;
+    const valueEl = box.querySelector("strong");
+    if (valueEl) valueEl.innerText = formatDisplayNumber(getDonHangTotal());
 }
 
 function formatDateInput(date) {
@@ -1057,6 +1079,7 @@ function renderTable() {
             tbody.innerHTML = `<tr><td colspan="${headers.length + 1}">Chưa có dữ liệu.</td></tr>`;
         }
         syncSelectAllCheckbox();
+        updateDonHangTotalBox();
         renderPagination();
         return;
     }
