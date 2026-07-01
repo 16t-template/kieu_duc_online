@@ -1173,7 +1173,42 @@ function renderBaoCao() {
     const skuTotalPages = Math.max(Math.ceil(data.skuRows.length / skuPageSize), 1);
     reportSkuPage = Math.min(Math.max(reportSkuPage, 1), skuTotalPages);
     const skuPageRows = data.skuRows.slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
-    const salesCommission = getSalesCommissionBreakdown(data.totalSales);
+    
+    let totalMonthlyCommission = 0;
+    let totalTier1 = 0, totalTier2 = 0, totalTier3 = 0, totalTier4 = 0;
+    const monthlyCommissionRows = [];
+    const monthlySales = new Map();
+    data.dateRows.forEach(row => {
+        const d = new Date(getDateTime(row.ngay));
+        if (d.getTime() > 0) {
+            const monthStr = (d.getMonth() + 1).toString().padStart(2, '0') + '/' + d.getFullYear();
+            monthlySales.set(monthStr, (monthlySales.get(monthStr) || 0) + row.sales);
+        }
+    });
+    for (const [month, sales] of monthlySales.entries()) {
+        const bd = getSalesCommissionBreakdown(sales);
+        const commission = bd.total;
+        monthlyCommissionRows.push({ 
+            month, 
+            sales, 
+            tier1: bd.rows[0].amount,
+            tier2: bd.rows[1].amount,
+            tier3: bd.rows[2].amount,
+            tier4: bd.rows[3].amount,
+            commission 
+        });
+        totalTier1 += bd.rows[0].amount;
+        totalTier2 += bd.rows[1].amount;
+        totalTier3 += bd.rows[2].amount;
+        totalTier4 += bd.rows[3].amount;
+        totalMonthlyCommission += commission;
+    }
+    monthlyCommissionRows.sort((a, b) => {
+        const [am, ay] = a.month.split('/');
+        const [bm, by] = b.month.split('/');
+        return (by - ay) || (bm - am);
+    });
+
     const chartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
     let chartCursor = 0;
@@ -1207,7 +1242,7 @@ function renderBaoCao() {
             </article>
             <article>
                 <span>Tổng hoa hồng</span>
-                <strong>${escapeHtml(formatDisplayNumber(data.totalCommission))}</strong>
+                <strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong>
             </article>
         </div>
         <div class="report-grid dashboard-report-group">
@@ -1253,22 +1288,34 @@ function renderBaoCao() {
                     <table>
                         <thead>
                             <tr>
+                                <th>Tháng</th>
                                 <th>Doanh số</th>
-                                <th>% HH</th>
+                                <th>Dưới 468tr (0%)</th>
+                                <th>Từ 468tr đến dưới 780tr (0.5%)</th>
+                                <th>Bằng 780tr (1%)</th>
+                                <th>Trên 780tr (1% + 1.5%)</th>
                                 <th>Hoa hồng</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${salesCommission.rows.map(row => `
+                            ${monthlyCommissionRows.map(row => `
                                 <tr>
-                                    <td>${escapeHtml(row.label)}</td>
-                                    <td>${escapeHtml(row.rate)}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.amount))}</td>
+                                    <td>${escapeHtml(row.month)}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.tier1))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.tier2))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.tier3))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.tier4))}</td>
+                                    <td><strong>${escapeHtml(formatDisplayNumber(row.commission))}</strong></td>
                                 </tr>
                             `).join("")}
                             <tr class="report-total-row">
-                                <td colspan="2">Tổng hoa hồng</td>
-                                <td>${escapeHtml(formatDisplayNumber(salesCommission.total))}</td>
+                                <td colspan="2">Tổng cộng</td>
+                                <td>${escapeHtml(formatDisplayNumber(totalTier1))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(totalTier2))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(totalTier3))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(totalTier4))}</td>
+                                <td><strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong></td>
                             </tr>
                         </tbody>
                     </table>
