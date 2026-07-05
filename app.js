@@ -698,8 +698,8 @@ async function renderFilterPanel() {
     const panel = document.getElementById("filterPanel");
     if (getModuleConfig().reportOnly) {
         panel.innerHTML = `
-            <label><span>Từ ngày</span><input id="reportDateFrom" type="date" onchange="fetchData()"></label>
-            <label><span>Tới ngày</span><input id="reportDateTo" type="date" onchange="fetchData()"></label>
+            <label><span>Từ ngày</span><input id="reportDateFrom" type="date" value="${getQuickDateRange('month').from}" onchange="fetchData()"></label>
+            <label><span>Tới ngày</span><input id="reportDateTo" type="date" value="${getQuickDateRange('month').to}" onchange="fetchData()"></label>
             ${renderQuickDateButtons("report")}
             <label><span>NPP</span><select id="reportNpp" onchange="fetchData()">
                 <option value="">Tất cả NPP</option>
@@ -716,8 +716,8 @@ async function renderFilterPanel() {
     }
     if (currentModule === "DON_HANG") {
         panel.innerHTML = `
-            <label><span>Từ ngày</span><input id="filterDateFrom" type="date" onchange="filterTable()"></label>
-            <label><span>Tới ngày</span><input id="filterDateTo" type="date" onchange="filterTable()"></label>
+            <label><span>Từ ngày</span><input id="filterDateFrom" type="date" value="${getQuickDateRange('month').from}" onchange="filterTable()"></label>
+            <label><span>Tới ngày</span><input id="filterDateTo" type="date" value="${getQuickDateRange('month').to}" onchange="filterTable()"></label>
             ${renderQuickDateButtons("table")}
             <label><span>NPP</span><select id="filterNpp" onchange="filterTable()">
                 <option value="">Tất cả NPP</option>
@@ -939,9 +939,27 @@ function renderQuickDateButtons(scope) {
             <button type="button" onclick="applyQuickDateFilter('${scope}', 'today')">Hôm nay</button>
             <button type="button" onclick="applyQuickDateFilter('${scope}', 'yesterday')">Hôm qua</button>
             <button type="button" onclick="applyQuickDateFilter('${scope}', 'week')">Tuần này</button>
-            <button type="button" onclick="applyQuickDateFilter('${scope}', 'month')">Tháng này</button>
+            <select class="quick-month-select" onchange="applyQuickMonthFilter('${scope}', this.value)" style="margin-left: 4px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none; background: #fff;">
+                <option value="">Chọn tháng</option>
+                ${Array.from({length: 12}, (_, i) => `<option value="${i + 1}">Tháng ${i + 1}</option>`).join("")}
+            </select>
         </div>
     `;
+}
+
+function applyQuickMonthFilter(scope, monthStr) {
+    if (!monthStr) return;
+    const month = parseInt(monthStr, 10);
+    const today = new Date();
+    const start = new Date(today.getFullYear(), month - 1, 1);
+    const end = new Date(today.getFullYear(), month, 0);
+    
+    const fromInput = document.getElementById(scope === "report" ? "reportDateFrom" : "filterDateFrom");
+    const toInput = document.getElementById(scope === "report" ? "reportDateTo" : "filterDateTo");
+    if (fromInput) fromInput.value = formatDateInput(start);
+    if (toInput) toInput.value = formatDateInput(end);
+    if (scope === "report") fetchData();
+    else filterTable();
 }
 
 function applyQuickDateFilter(scope, type) {
