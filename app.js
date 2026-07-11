@@ -1145,41 +1145,34 @@ function renderTable() {
 
 function getSalesCommissionBreakdown(totalSales) {
     const sales = parseMoney(totalSales);
-    const firstTarget = 468000000;
-    const secondTarget = 780000000;
-    if (sales < firstTarget) {
-        return {
-            rows: [
-                { label: "Dưới 468.000.000", rate: "0%", amount: 0 },
-                { label: "Từ 468tr đến dưới 780tr", rate: "0.5%", amount: 0 },
-                { label: "Bằng 780tr", rate: "1%", amount: 0 },
-                { label: "Trên 780tr", rate: "1% của 780tr + 1.5% phần vượt", amount: 0 }
-            ],
-            total: 0
-        };
+    let t_under468 = 0, t_468_780 = 0, t_base780 = 0;
+    let t_over_1 = 0, t_over_15 = 0, t_over_175 = 0, t_over_185 = 0, t_over_2 = 0;
+
+    if (sales < 468000000) {
+        // Tỷ lệ 0%
+    } else if (sales < 780000000) {
+        t_468_780 = sales * 0.005;
+    } else {
+        t_base780 = 780000000 * 0.01;
+        const excess = sales - 780000000;
+        if (sales < 1100000000) {
+            t_over_1 = excess * 0.01;
+        } else if (sales < 1300000000) {
+            t_over_15 = excess * 0.015;
+        } else if (sales < 1700000000) {
+            t_over_175 = excess * 0.0175;
+        } else if (sales < 2000000000) {
+            t_over_185 = excess * 0.0185;
+        } else {
+            t_over_2 = excess * 0.02;
+        }
     }
-    if (sales < secondTarget) {
-        const amount = sales * 0.005;
-        return {
-            rows: [
-                { label: "Dưới 468.000.000", rate: "0%", amount: 0 },
-                { label: "Từ 468tr đến dưới 780tr", rate: "0.5%", amount },
-                { label: "Bằng 780tr", rate: "1%", amount: 0 },
-                { label: "Trên 780tr", rate: "1% của 780tr + 1.5% phần vượt", amount: 0 }
-            ],
-            total: amount
-        };
-    }
-    const baseAmount = secondTarget * 0.01;
-    const overAmount = Math.max(sales - secondTarget, 0) * 0.015;
+    
+    const total = t_under468 + t_468_780 + t_base780 + t_over_1 + t_over_15 + t_over_175 + t_over_185 + t_over_2;
     return {
-        rows: [
-            { label: "Dưới 468.000.000", rate: "0%", amount: 0 },
-            { label: "Từ 468tr đến dưới 780tr", rate: "0.5%", amount: 0 },
-            { label: "Bằng 780tr", rate: "1%", amount: baseAmount },
-            { label: "Trên 780tr", rate: "1% của 780tr + 1.5% phần vượt", amount: overAmount }
-        ],
-        total: baseAmount + overAmount
+        t_under468, t_468_780, t_base780,
+        t_over_1, t_over_15, t_over_175, t_over_185, t_over_2,
+        total
     };
 }
 
@@ -1193,7 +1186,8 @@ function renderBaoCao() {
     const skuPageRows = data.skuRows.slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
     
     let totalMonthlyCommission = 0;
-    let totalTier1 = 0, totalTier2 = 0, totalTier3 = 0, totalTier4 = 0;
+    let sum_under468 = 0, sum_468_780 = 0, sum_base780 = 0;
+    let sum_over_1 = 0, sum_over_15 = 0, sum_over_175 = 0, sum_over_185 = 0, sum_over_2 = 0;
     const monthlyCommissionRows = [];
     const monthlySales = new Map();
     data.dateRows.forEach(row => {
@@ -1209,16 +1203,24 @@ function renderBaoCao() {
         monthlyCommissionRows.push({ 
             month, 
             sales, 
-            tier1: bd.rows[0].amount,
-            tier2: bd.rows[1].amount,
-            tier3: bd.rows[2].amount,
-            tier4: bd.rows[3].amount,
+            t_under468: bd.t_under468,
+            t_468_780: bd.t_468_780,
+            t_base780: bd.t_base780,
+            t_over_1: bd.t_over_1,
+            t_over_15: bd.t_over_15,
+            t_over_175: bd.t_over_175,
+            t_over_185: bd.t_over_185,
+            t_over_2: bd.t_over_2,
             commission 
         });
-        totalTier1 += bd.rows[0].amount;
-        totalTier2 += bd.rows[1].amount;
-        totalTier3 += bd.rows[2].amount;
-        totalTier4 += bd.rows[3].amount;
+        sum_under468 += bd.t_under468;
+        sum_468_780 += bd.t_468_780;
+        sum_base780 += bd.t_base780;
+        sum_over_1 += bd.t_over_1;
+        sum_over_15 += bd.t_over_15;
+        sum_over_175 += bd.t_over_175;
+        sum_over_185 += bd.t_over_185;
+        sum_over_2 += bd.t_over_2;
         totalMonthlyCommission += commission;
     }
     monthlyCommissionRows.sort((a, b) => {
@@ -1309,9 +1311,13 @@ function renderBaoCao() {
                                 <th>Tháng</th>
                                 <th>Doanh số</th>
                                 <th>Dưới 468tr (0%)</th>
-                                <th>Từ 468tr đến dưới 780tr (0.5%)</th>
-                                <th>Bằng 780tr (1%)</th>
-                                <th>Trên 780tr (1% + 1.5%)</th>
+                                <th>468tr-780tr (0.5%)</th>
+                                <th>Cố định 780tr (1%)</th>
+                                <th>780tr - dưới 1.1 tỷ (1%)</th>
+                                <th>1.1 tỷ - dưới 1.3 tỷ (1.5%)</th>
+                                <th>1.3 tỷ - dưới 1.7 tỷ (1.75%)</th>
+                                <th>1.7 tỷ - dưới 2 tỷ (1.85%)</th>
+                                <th>Từ 2 tỷ trở lên (2%)</th>
                                 <th>Hoa hồng</th>
                             </tr>
                         </thead>
@@ -1320,19 +1326,27 @@ function renderBaoCao() {
                                 <tr>
                                     <td>${escapeHtml(row.month)}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.tier1))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.tier2))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.tier3))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.tier4))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_under468))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_468_780))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_base780))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_1))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_15))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_175))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_185))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_2))}</td>
                                     <td><strong>${escapeHtml(formatDisplayNumber(row.commission))}</strong></td>
                                 </tr>
                             `).join("")}
                             <tr class="report-total-row">
                                 <td colspan="2">Tổng cộng</td>
-                                <td>${escapeHtml(formatDisplayNumber(totalTier1))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(totalTier2))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(totalTier3))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(totalTier4))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_under468))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_468_780))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_base780))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_over_1))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_over_15))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_over_175))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_over_185))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_over_2))}</td>
                                 <td><strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong></td>
                             </tr>
                         </tbody>
