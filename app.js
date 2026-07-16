@@ -400,12 +400,14 @@ async function loadModuleRows(moduleName) {
 }
 
 async function buildBaoCaoData() {
-    const [donHangRows, nppRows] = await Promise.all([
+    const [donHangRows, nppRows, congNoRows] = await Promise.all([
         loadModuleRows("DON_HANG"),
-        loadModuleRows("NPP")
+        loadModuleRows("NPP"),
+        loadModuleRows("CONG_NO")
     ]);
     const donHangHeaders = getHeaders("DON_HANG");
     const nppHeaders = getHeaders("NPP");
+    const congNoHeaders = getHeaders("CONG_NO");
     const nppNameById = new Map(nppRows.map(row => [
         String(row[nppHeaders.indexOf("id")] || "").trim(),
         String(row[nppHeaders.indexOf("ten")] || "").trim()
@@ -430,6 +432,7 @@ async function buildBaoCaoData() {
     const nppSales = new Map();
     const skuSales = new Map();
     const dateSales = new Map();
+    const monthlyCollectedDebt = new Map();
     let totalSales = 0;
     let totalQuantity = 0;
     let totalCommission = 0;
@@ -496,6 +499,25 @@ async function buildBaoCaoData() {
         }
     });
 
+    const congNoNgayIndex = congNoHeaders.indexOf("ngay");
+    const congNoNppIndex = congNoHeaders.indexOf("npp");
+    const congNoTruongIndex = congNoHeaders.indexOf("truong");
+    const congNoSoTienIndex = congNoHeaders.indexOf("so_tien");
+    congNoRows.forEach(row => {
+        const ngay = String(row[congNoNgayIndex] || "").trim();
+        const npp = String(row[congNoNppIndex] || "").trim();
+        const type = String(row[congNoTruongIndex] || "").trim().toUpperCase();
+        const rowTime = getDateTime(ngay);
+        if (type !== "THU") return;
+        if (fromTime && rowTime < fromTime) return;
+        if (toTime && rowTime > toTime) return;
+        if (filterNpp && npp.toLowerCase() !== filterNpp) return;
+        const d = new Date(rowTime);
+        if (!rowTime || Number.isNaN(d.getTime())) return;
+        const month = `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+        monthlyCollectedDebt.set(month, (monthlyCollectedDebt.get(month) || 0) + parseMoney(row[congNoSoTienIndex]));
+    });
+
     const nppRowsReport = [...nppSales.values()]
         .map(entry => ({
             ...entry,
@@ -512,6 +534,7 @@ async function buildBaoCaoData() {
         bestNpp: nppRowsReport[0] || null,
         nppRows: nppRowsReport,
         skuRows: [...skuSales.values()].sort((a, b) => b.sales - a.sales),
+        monthlyCollectedDebtRows: [...monthlyCollectedDebt.entries()].map(([month, collectedDebt]) => ({ month, collectedDebt })),
         dateRows: [...dateSales.values()]
             .map(entry => ({ ...entry, orderCount: entry.orders.size }))
             .sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay))
@@ -1178,7 +1201,7 @@ function getSalesCommissionBreakdown(totalSales) {
 
 function renderBaoCao() {
     document.getElementById("reportView")?.remove();
-    const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], dateRows: [] };
+    const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], monthlyCollectedDebtRows: [], dateRows: [] };
     const reportNppName = row => row?.nppName || row?.npp || "";
     const skuPageSize = 10;
     const skuTotalPages = Math.max(Math.ceil(data.skuRows.length / skuPageSize), 1);
@@ -1228,6 +1251,28 @@ function renderBaoCao() {
         const [bm, by] = b.month.split('/');
         return (by - ay) || (bm - am);
     });
+
+    const collectedDebtByMonth = new Map((data.monthlyCollectedDebtRows || []).map(row => [row.month, row.collectedDebt]));
+    const monthlyCollectionMonths = new Set([...monthlySales.keys(), ...collectedDebtByMonth.keys()]);
+    const monthlyCollectionRows = [...monthlyCollectionMonths].map(month => {
+        const sales = monthlySales.get(month) || 0;
+        const collectedDebt = collectedDebtByMonth.get(month) || 0;
+        return {
+            month,
+            sales,
+            collectedDebt,
+            collectionRate: sales ? (collectedDebt / sales) * 100 : 0,
+            target90Sales: sales * 0.9
+        };
+    }).sort((a, b) => {
+        const [am, ay] = a.month.split('/');
+        const [bm, by] = b.month.split('/');
+        return (by - ay) || (bm - am);
+    });
+    const totalCollectedDebt = monthlyCollectionRows.reduce((sum, row) => sum + row.collectedDebt, 0);
+    const totalTarget90Sales = monthlyCollectionRows.reduce((sum, row) => sum + row.target90Sales, 0);
+    const totalCollectionRate = data.totalSales ? (totalCollectedDebt / data.totalSales) * 100 : 0;
+    const formatPercent = value => `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(Number(value) || 0)}%`;
 
     const chartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
     const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
@@ -1349,6 +1394,42 @@ function renderBaoCao() {
                                 <td>${escapeHtml(formatDisplayNumber(sum_over_2))}</td>
                                 <td><strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong></td>
                             </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="report-panel collection-performance-panel">
+                <h2>T&#7927; l&#7879; thu theo th&aacute;ng</h2>
+                <div class="report-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Th&aacute;ng</th>
+                                <th>Doanh s&#7889;</th>
+                                <th>N&#7907; &#273;&atilde; thu</th>
+                                <th>T&#7881; l&#7879; thu</th>
+                                <th>90% doanh s&#7889;</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${monthlyCollectionRows.map(row => `
+                                <tr>
+                                    <td>${escapeHtml(row.month)}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.collectedDebt))}</td>
+                                    <td><strong>${escapeHtml(formatPercent(row.collectionRate))}</strong></td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.target90Sales))}</td>
+                                </tr>
+                            `).join("") || `<tr><td colspan="5">Ch&#432;a c&oacute; d&#7919; li&#7879;u.</td></tr>`}
+                            ${monthlyCollectionRows.length ? `
+                                <tr class="report-total-row">
+                                    <td>T&#7893;ng c&#7897;ng</td>
+                                    <td>${escapeHtml(formatDisplayNumber(data.totalSales))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(totalCollectedDebt))}</td>
+                                    <td><strong>${escapeHtml(formatPercent(totalCollectionRate))}</strong></td>
+                                    <td>${escapeHtml(formatDisplayNumber(totalTarget90Sales))}</td>
+                                </tr>
+                            ` : ""}
                         </tbody>
                     </table>
                 </div>
