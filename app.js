@@ -1143,32 +1143,32 @@ function renderTable() {
 
 function getSalesCommissionBreakdown(totalSales) {
     const sales = parseMoney(totalSales);
-    let t_under468 = 0, t_468_780 = 0, t_base780 = 0;
+    let t_under524 = 0, t_524_874 = 0, t_base874 = 0;
     let t_over_1 = 0, t_over_15 = 0, t_over_175 = 0, t_over_185 = 0, t_over_2 = 0;
 
-    if (sales < 468000000) {
+    if (sales < 524000000) {
         // Tỷ lệ 0%
-    } else if (sales < 780000000) {
-        t_468_780 = sales * 0.005;
+    } else if (sales < 874000000) {
+        t_524_874 = sales * 0.005;
     } else {
-        t_base780 = 780000000 * 0.01;
-        const excess = sales - 780000000;
-        if (sales < 1100000000) {
+        t_base874 = 874000000 * 0.01;
+        const excess = sales - 874000000;
+        if (sales < 1232000000) {
             t_over_1 = excess * 0.01;
-        } else if (sales < 1300000000) {
+        } else if (sales < 1456000000) {
             t_over_15 = excess * 0.015;
-        } else if (sales < 1700000000) {
+        } else if (sales < 1904000000) {
             t_over_175 = excess * 0.0175;
-        } else if (sales < 2000000000) {
+        } else if (sales < 2240000000) {
             t_over_185 = excess * 0.0185;
         } else {
             t_over_2 = excess * 0.02;
         }
     }
     
-    const total = t_under468 + t_468_780 + t_base780 + t_over_1 + t_over_15 + t_over_175 + t_over_185 + t_over_2;
+    const total = t_under524 + t_524_874 + t_base874 + t_over_1 + t_over_15 + t_over_175 + t_over_185 + t_over_2;
     return {
-        t_under468, t_468_780, t_base780,
+        t_under524, t_524_874, t_base874,
         t_over_1, t_over_15, t_over_175, t_over_185, t_over_2,
         total
     };
@@ -1184,7 +1184,7 @@ function renderBaoCao() {
     const skuPageRows = data.skuRows.slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
     
     let totalMonthlyCommission = 0;
-    let sum_under468 = 0, sum_468_780 = 0, sum_base780 = 0;
+    let sum_under524 = 0, sum_524_874 = 0, sum_base874 = 0;
     let sum_over_1 = 0, sum_over_15 = 0, sum_over_175 = 0, sum_over_185 = 0, sum_over_2 = 0;
     const monthlyCommissionRows = [];
     const monthlySales = new Map();
@@ -1201,9 +1201,9 @@ function renderBaoCao() {
         monthlyCommissionRows.push({ 
             month, 
             sales, 
-            t_under468: bd.t_under468,
-            t_468_780: bd.t_468_780,
-            t_base780: bd.t_base780,
+            t_under524: bd.t_under524,
+            t_524_874: bd.t_524_874,
+            t_base874: bd.t_base874,
             t_over_1: bd.t_over_1,
             t_over_15: bd.t_over_15,
             t_over_175: bd.t_over_175,
@@ -1211,9 +1211,9 @@ function renderBaoCao() {
             t_over_2: bd.t_over_2,
             commission 
         });
-        sum_under468 += bd.t_under468;
-        sum_468_780 += bd.t_468_780;
-        sum_base780 += bd.t_base780;
+        sum_under524 += bd.t_under524;
+        sum_524_874 += bd.t_524_874;
+        sum_base874 += bd.t_base874;
         sum_over_1 += bd.t_over_1;
         sum_over_15 += bd.t_over_15;
         sum_over_175 += bd.t_over_175;
@@ -1330,14 +1330,14 @@ function renderBaoCao() {
                             <tr>
                                 <th>Tháng</th>
                                 <th>Doanh số</th>
-                                <th>Dưới 468tr (0%)</th>
-                                <th>468tr-780tr (0.5%)</th>
-                                <th>Cố định 780tr (1%)</th>
-                                <th>780tr - dưới 1.1 tỷ (1%)</th>
-                                <th>1.1 tỷ - dưới 1.3 tỷ (1.5%)</th>
-                                <th>1.3 tỷ - dưới 1.7 tỷ (1.75%)</th>
-                                <th>1.7 tỷ - dưới 2 tỷ (1.85%)</th>
-                                <th>Từ 2 tỷ trở lên (2%)</th>
+                                <th>< 524tr (0%)</th>
+                                <th>524-874tr (0.5%)</th>
+                                <th>Cố định 874tr (1%)</th>
+                                <th>874tr-1.232tỷ (1%)</th>
+                                <th>1.232-1.456tỷ (1.5%)</th>
+                                <th>1.456-1.904tỷ (1.75%)</th>
+                                <th>1.904-2.24tỷ (1.85%)</th>
+                                <th>>= 2.24tỷ (2%)</th>
                                 <th>Hoa hồng</th>
                             </tr>
                         </thead>
@@ -1346,9 +1346,9 @@ function renderBaoCao() {
                                 <tr>
                                     <td>${escapeHtml(row.month)}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_under468))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_468_780))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_base780))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_under524))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_524_874))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(row.t_base874))}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.t_over_1))}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.t_over_15))}</td>
                                     <td>${escapeHtml(formatDisplayNumber(row.t_over_175))}</td>
@@ -1359,9 +1359,9 @@ function renderBaoCao() {
                             `).join("")}
                             <tr class="report-total-row">
                                 <td colspan="2">Tổng cộng</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_under468))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_468_780))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_base780))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_under524))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_524_874))}</td>
+                                <td>${escapeHtml(formatDisplayNumber(sum_base874))}</td>
                                 <td>${escapeHtml(formatDisplayNumber(sum_over_1))}</td>
                                 <td>${escapeHtml(formatDisplayNumber(sum_over_15))}</td>
                                 <td>${escapeHtml(formatDisplayNumber(sum_over_175))}</td>
