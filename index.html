@@ -66,6 +66,9 @@
                     <button id="reloadBtn" type="button" onclick="fetchData()">
                         <i data-lucide="refresh-cw" style="width:18px;"></i> Load lại
                     </button>
+                    <button id="columnConfigBtn" type="button" class="secondary-btn" onclick="openColumnConfigModal()" title="Chỉnh sửa chi tiết các cột">
+                        <i data-lucide="sliders-horizontal" style="width:18px;"></i> Cột
+                    </button>
                     <button id="uploadBtn" onclick="document.getElementById('fileInput').click()">
                         <i data-lucide="upload" style="width:18px;"></i> Tải dữ liệu lên
                     </button>
@@ -109,6 +112,55 @@
                 <div class="modal-actions-right">
                     <button type="button" class="secondary-btn" onclick="closeProductForm()">Hủy</button>
                     <button type="submit" class="primary-btn">Lưu</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="modal-mask" id="columnConfigModal">
+        <form class="modal column-config-modal" onsubmit="saveColumnConfigForm(event)">
+            <div class="modal-header">
+                <div class="column-modal-title-group">
+                    <h2>Chỉnh sửa chi tiết các cột</h2>
+                    <select id="columnConfigModuleSelect" onchange="switchColumnConfigModule(this.value)"></select>
+                </div>
+                <button type="button" class="icon-btn" onclick="closeColumnConfigModal()" title="Đóng">
+                    <i data-lucide="x" style="width:18px;"></i>
+                </button>
+            </div>
+            <div class="column-config-body">
+                <p class="column-config-hint">Kéo thả biểu tượng <i data-lucide="grip-vertical" style="width:14px; vertical-align:middle;"></i> để đổi nhanh thứ tự cột, chỉnh kích thước (đồng bộ với kéo biên cột ngoài bảng), căn lề, kiểu dữ liệu hoặc thêm/xóa cột.</p>
+                <div class="column-config-table-wrap">
+                    <table class="column-config-table">
+                        <thead>
+                            <tr>
+                                <th style="width:42px; text-align:center;" title="Kéo thả để sắp xếp"></th>
+                                <th style="width:56px; text-align:center;">Hiện</th>
+                                <th>Mã cột (Sheet)</th>
+                                <th>Tên hiển thị</th>
+                                <th style="width:145px;">Kiểu dữ liệu</th>
+                                <th style="width:125px;">Kích thước (px)</th>
+                                <th style="width:130px; text-align:center;">Căn lề</th>
+                                <th style="width:105px; text-align:center;">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="columnConfigBody"></tbody>
+                    </table>
+                </div>
+                <div class="column-config-toolbar">
+                    <button type="button" class="secondary-btn compact-btn" onclick="addColumnConfigRow()">
+                        <i data-lucide="plus" style="width:16px;"></i> Thêm cột mới
+                    </button>
+                    <button type="button" class="secondary-btn compact-btn" onclick="resetColumnConfigDefault()">
+                        <i data-lucide="rotate-ccw" style="width:16px;"></i> Khôi phục mặc định
+                    </button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <div></div>
+                <div class="modal-actions-right">
+                    <button type="button" class="secondary-btn" onclick="closeProductForm(); closeColumnConfigModal();">Hủy</button>
+                    <button type="submit" class="primary-btn">Lưu cấu hình cột</button>
                 </div>
             </div>
         </form>

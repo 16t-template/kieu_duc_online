@@ -36,7 +36,7 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDQu0DqH8iQlilt\nwoGRPxJsieyf1t
         DS_SP: {
             label: "DS SP",
             icon: "package",
-            headers: ["id", "ten_sp", "gia_ban", "gia_km"],
+            headers: ["id", "ten_sp", "gia_ban", "gia_km", "thuong_hieu"],
             numericHeaders: ["gia_ban", "gia_km"]
         },
         BAO_HANH: {
@@ -62,7 +62,9 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDQu0DqH8iQlilt\nwoGRPxJsieyf1t
 
 const MODULE_STORAGE_KEY = "kieuDucActiveModule";
 const AUTH_STORAGE_KEY = "kieuDucCurrentUser";
+const COLUMN_CONFIG_STORAGE_KEY = "kieuDucColumnConfig_v1";
 const MODULE_ORDER = ["BAO_CAO", "DON_HANG", "CONG_NO", "CONG_VIEC", "NPP", "DS_SP", "BAO_HANH"];
+const DEFAULT_MODULE_CONFIGS = JSON.parse(JSON.stringify(CONFIG.modules));
 
 let accessToken = null;
 let tokenExpiry = 0;
@@ -81,13 +83,112 @@ let reportSkuPage = 1;
 let currentUser = null;
 let moduleLoadSeq = 0;
 let selectedSheetRows = new Set();
+let columnConfigEditingModule = "DS_SP";
+let customColumnConfigs = loadStoredColumnConfigs();
+let moduleSortState = {};
+
+function loadStoredColumnConfigs() {
+    try {
+        const raw = localStorage.getItem(COLUMN_CONFIG_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        if (parsed && typeof parsed === "object") {
+            if (parsed.DS_SP && Array.isArray(parsed.DS_SP.headers) && !parsed.DS_SP.headers.includes("thuong_hieu") && !parsed.DS_SP.removedDefaultHeaders?.includes("thuong_hieu")) {
+                parsed.DS_SP.headers.push("thuong_hieu");
+            }
+            return parsed;
+        }
+    } catch (_) { }
+    return {};
+}
+
+function saveStoredColumnConfigs() {
+    try {
+        localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(customColumnConfigs));
+    } catch (_) { }
+}
 
 function getModuleConfig(moduleName = currentModule) {
     return CONFIG.modules[moduleName] || CONFIG.modules.NPP;
 }
 
+function getDefaultModuleConfig(moduleName = currentModule) {
+    return DEFAULT_MODULE_CONFIGS[moduleName] || DEFAULT_MODULE_CONFIGS.NPP;
+}
+
+function getModuleColumnConfig(moduleName = currentModule) {
+    const def = getDefaultModuleConfig(moduleName);
+    const saved = customColumnConfigs[moduleName] || {};
+    const headers = Array.isArray(saved.headers) && saved.headers.length ? [...saved.headers] : [...(def.headers || [])];
+    const defaultHidden = moduleName === "DON_HANG"
+        ? headers.filter(h => !["ngay", "mdh", "npp"].includes(h))
+        : ["id"];
+    const hiddenHeaders = Array.isArray(saved.hiddenHeaders) ? [...saved.hiddenHeaders] : defaultHidden;
+    const labels = saved.labels && typeof saved.labels === "object" ? { ...saved.labels } : {};
+    const types = saved.types && typeof saved.types === "object" ? { ...saved.types } : {};
+    const widths = saved.widths && typeof saved.widths === "object" ? { ...saved.widths } : {};
+    const aligns = saved.aligns && typeof saved.aligns === "object" ? { ...saved.aligns } : {};
+    return { headers, hiddenHeaders, labels, types, widths, aligns };
+}
+
+function getColumnWidth(header, moduleName = currentModule) {
+    const colCfg = getModuleColumnConfig(moduleName);
+    const w = Number(colCfg.widths[header]);
+    return Number.isFinite(w) && w >= 40 ? Math.round(w) : null;
+}
+
+function getColumnAlign(header, moduleName = currentModule) {
+    const colCfg = getModuleColumnConfig(moduleName);
+    const align = colCfg.aligns[header];
+    if (["left", "center", "right"].includes(align)) return align;
+    return "left";
+}
+
+function getCellStyleAttr(header, moduleName = currentModule) {
+    const styles = [];
+    const width = getColumnWidth(header, moduleName);
+    if (width) {
+        styles.push(`width:${width}px`, `min-width:${width}px`, `max-width:${width}px`);
+    }
+    const align = getColumnAlign(header, moduleName);
+    if (align && align !== "left") {
+        styles.push(`text-align:${align}`);
+    }
+    return styles.length ? ` style="${styles.join(";")}"` : "";
+}
+
 function getHeaders(moduleName = currentModule) {
-    return getModuleConfig(moduleName).headers;
+    const def = getModuleConfig(moduleName);
+    if (def.reportOnly || def.hidden) return def.headers || [];
+    return getModuleColumnConfig(moduleName).headers;
+}
+
+function getHeaderLabel(header, moduleName = currentModule) {
+    const colCfg = getModuleColumnConfig(moduleName);
+    if (colCfg.labels[header]) return colCfg.labels[header];
+    return String(header || "").toUpperCase();
+}
+
+function getColumnType(header, moduleName = currentModule) {
+    const colCfg = getModuleColumnConfig(moduleName);
+    if (colCfg.types[header]) return colCfg.types[header];
+    const def = getDefaultModuleConfig(moduleName);
+    if ((def.numericHeaders || []).includes(header)) return "number";
+    if ((def.textareaHeaders || []).includes(header)) return "textarea";
+    if (String(header || "").includes("ngay")) return "date";
+    return "text";
+}
+
+function getVisibleTableHeaders(moduleName = currentModule) {
+    const colCfg = getModuleColumnConfig(moduleName);
+    const hiddenSet = new Set(colCfg.hiddenHeaders);
+    if (moduleName === "DON_HANG") {
+        const displayChoices = [...colCfg.headers];
+        if (!displayChoices.includes("tong_tien")) displayChoices.push("tong_tien");
+        const visible = displayChoices.filter(h => !hiddenSet.has(h));
+        return visible.length ? visible : ["ngay", "mdh", "npp", "tong_tien"];
+    }
+    const visible = colCfg.headers.filter(h => !hiddenSet.has(h));
+    return visible.length ? visible : colCfg.headers;
 }
 
 async function getAccessToken() {
@@ -181,8 +282,12 @@ function clampCommissionPercent(value) {
     return String(Math.min(Math.max(number, 0.001), 100));
 }
 
-function isNumericHeader(header) {
-    return (getModuleConfig().numericHeaders || []).includes(header);
+function isNumericHeader(header, moduleName = currentModule) {
+    return getColumnType(header, moduleName) === "number";
+}
+
+function isTextareaHeader(header, moduleName = currentModule) {
+    return getColumnType(header, moduleName) === "textarea";
 }
 
 function normalizeRow(row) {
@@ -274,17 +379,38 @@ async function ensureModuleSheet(moduleName = currentModule) {
 }
 
 async function ensureModuleHeaders(moduleName = currentModule) {
-    const expectedHeaders = getHeaders(moduleName);
-    const range = `${quoteSheetName(moduleName)}!A1:${colName(expectedHeaders.length - 1)}1`;
-    const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
-    const currentHeaders = data.values?.[0] || [];
-    const needsHeader = expectedHeaders.some((header, index) => String(currentHeaders[index] || "").trim() !== header);
+    let expectedHeaders = [...getHeaders(moduleName)];
+    if (!expectedHeaders.length) return;
+    const headerRowRange = `${quoteSheetName(moduleName)}!1:1`;
+    const data = await sheetsFetch(`/values/${encodeURIComponent(headerRowRange)}`);
+    const rawCurrentHeaders = (data.values?.[0] || []).map(h => String(h || "").trim());
+    const currentHeaders = rawCurrentHeaders.filter((h, idx) => h || idx < expectedHeaders.length);
+
+    const removedSet = new Set(customColumnConfigs[moduleName]?.removedDefaultHeaders || []);
+    let adoptedExtra = false;
+    rawCurrentHeaders.forEach(sheetHeader => {
+        if (sheetHeader && !expectedHeaders.includes(sheetHeader) && !removedSet.has(sheetHeader)) {
+            expectedHeaders.push(sheetHeader);
+            adoptedExtra = true;
+        }
+    });
+    if (adoptedExtra && !getModuleConfig(moduleName).hidden) {
+        const colCfg = getModuleColumnConfig(moduleName);
+        customColumnConfigs[moduleName] = {
+            ...customColumnConfigs[moduleName],
+            ...colCfg,
+            headers: expectedHeaders
+        };
+        saveStoredColumnConfigs();
+    }
+
+    const needsHeader = currentHeaders.length !== expectedHeaders.length || expectedHeaders.some((header, index) => String(currentHeaders[index] || "").trim() !== header);
     if (!needsHeader) return;
     if (currentHeaders.some(header => String(header || "").trim())) {
-        const currentEndCol = colName(Math.max(currentHeaders.length, expectedHeaders.length) - 1);
+        const currentEndCol = colName(Math.max(rawCurrentHeaders.length, expectedHeaders.length) - 1);
         const oldDataRange = `${quoteSheetName(moduleName)}!A2:${currentEndCol}`;
         const oldData = await sheetsFetch(`/values/${encodeURIComponent(oldDataRange)}`);
-        const oldHeaders = currentHeaders.map(header => String(header || "").trim());
+        const oldHeaders = rawCurrentHeaders;
         const remappedRows = (oldData.values || []).map(row => expectedHeaders.map(header => {
             const oldIndex = oldHeaders.indexOf(header);
             return oldIndex >= 0 ? row[oldIndex] ?? "" : "";
@@ -299,28 +425,90 @@ async function ensureModuleHeaders(moduleName = currentModule) {
         });
         return;
     }
+    const range = `${quoteSheetName(moduleName)}!A1:${colName(expectedHeaders.length - 1)}1`;
     await sheetsFetch(`/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
         method: "PUT",
         body: JSON.stringify({ values: [expectedHeaders] })
     });
 }
 
+async function syncModuleHeadersToSheet(moduleName, newHeaders, renameMap = new Map()) {
+    if (!spreadsheetSheets.size) await loadSpreadsheetSheets();
+    if (!spreadsheetSheets.has(moduleName)) {
+        await batchUpdate([{ addSheet: { properties: { title: moduleName } } }]);
+        await loadSpreadsheetSheets();
+    }
+    const headerRowRange = `${quoteSheetName(moduleName)}!1:1`;
+    const data = await sheetsFetch(`/values/${encodeURIComponent(headerRowRange)}`);
+    const rawCurrentHeaders = (data.values?.[0] || []).map(h => String(h || "").trim());
+    const isSame = rawCurrentHeaders.length === newHeaders.length && newHeaders.every((h, idx) => rawCurrentHeaders[idx] === h);
+    if (isSame && !renameMap.size) return;
+
+    const maxCols = Math.max(rawCurrentHeaders.length, newHeaders.length, 1);
+    const currentEndCol = colName(maxCols - 1);
+    if (rawCurrentHeaders.some(Boolean)) {
+        const oldDataRange = `${quoteSheetName(moduleName)}!A2:${currentEndCol}`;
+        const oldData = await sheetsFetch(`/values/${encodeURIComponent(oldDataRange)}`);
+        const remappedRows = (oldData.values || []).map(row => newHeaders.map(header => {
+            const sourceHeader = renameMap.get(header) || header;
+            const oldIndex = rawCurrentHeaders.indexOf(sourceHeader);
+            return oldIndex >= 0 ? row[oldIndex] ?? "" : "";
+        }));
+        await sheetsFetch(`/values/${encodeURIComponent(`${quoteSheetName(moduleName)}!A1:${currentEndCol}`)}:clear`, {
+            method: "POST",
+            body: JSON.stringify({})
+        });
+        await sheetsFetch(`/values/${encodeURIComponent(`${quoteSheetName(moduleName)}!A1`)}?valueInputOption=RAW`, {
+            method: "PUT",
+            body: JSON.stringify({ values: [newHeaders, ...remappedRows] })
+        });
+    } else {
+        const range = `${quoteSheetName(moduleName)}!A1:${colName(newHeaders.length - 1)}1`;
+        await sheetsFetch(`/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+            method: "PUT",
+            body: JSON.stringify({ values: [newHeaders] })
+        });
+    }
+}
+
 async function loadDsSpOptions() {
     await ensureModuleSheet("DS_SP");
     const headers = getHeaders("DS_SP");
     const idIndex = headers.indexOf("id");
-    const tenIndex = headers.indexOf("ten_sp");
-    const giaIndex = headers.indexOf("gia_ban");
+    const tenIndex = headers.indexOf("ten_sp") >= 0 ? headers.indexOf("ten_sp") : headers.indexOf("ten");
+    const giaIndex = headers.indexOf("gia_ban") >= 0 ? headers.indexOf("gia_ban") : headers.indexOf("don_gia");
+    const thuongHieuIndex = headers.findIndex(h => slugifyColumnKey(h) === "thuong_hieu" || slugifyColumnKey(h) === "thuonghieu");
     const range = `${quoteSheetName("DS_SP")}!A2:${colName(headers.length - 1)}`;
     const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
     dsSpOptions = (data.values || [])
         .map(row => ({
             id: String(row[idIndex] || "").trim(),
             ten: String(row[tenIndex] || "").trim(),
-            gia: String(row[giaIndex] || "").trim()
+            gia: String(row[giaIndex] || "").trim(),
+            thuongHieu: thuongHieuIndex >= 0 ? String(row[thuongHieuIndex] || "").trim() : ""
         }))
         .filter(item => item.id);
     return dsSpOptions;
+}
+
+function getDsSpBrandOptions() {
+    const brands = new Set();
+    const thuongHieuIndex = getHeaderIndex("thuong_hieu", "DS_SP");
+    if (currentModule === "DS_SP" && thuongHieuIndex >= 0) {
+        allData.forEach(row => {
+            const val = String(row[thuongHieuIndex] || "").trim();
+            if (val) brands.add(val);
+        });
+    }
+    dsSpOptions.forEach(item => {
+        if (item.thuongHieu) brands.add(item.thuongHieu);
+    });
+    if (reportData?.allBrandRows) {
+        reportData.allBrandRows.forEach(item => {
+            if (item.brand && item.brand !== "Chưa phân loại") brands.add(item.brand);
+        });
+    }
+    return [...brands].sort((a, b) => a.localeCompare(b, "vi"));
 }
 
 function getDsSpById(idSp) {
@@ -374,11 +562,24 @@ async function loadModuleRows(moduleName) {
     });
 }
 
+let reportCommissionSelectedBrand = "ALL";
+
+function onReportBrandFilterChange(brandVal) {
+    reportCommissionSelectedBrand = brandVal ? brandVal : "ALL";
+    fetchData();
+}
+
+function selectReportCommissionBrand(brand) {
+    reportCommissionSelectedBrand = brand || "ALL";
+    renderBaoCao();
+}
+
 async function buildBaoCaoData() {
     const [donHangRows, nppRows, congNoRows] = await Promise.all([
         loadModuleRows("DON_HANG"),
         loadModuleRows("NPP"),
-        loadModuleRows("CONG_NO")
+        loadModuleRows("CONG_NO"),
+        loadDsSpOptions()
     ]);
     const donHangHeaders = getHeaders("DON_HANG");
     const nppHeaders = getHeaders("NPP");
@@ -391,26 +592,38 @@ async function buildBaoCaoData() {
         String(row[nppHeaders.indexOf("id")] || "").trim(),
         String(row[nppHeaders.indexOf("hoa_hong")] || "").trim()
     ]));
+    const idSpToBrand = new Map();
+    dsSpOptions.forEach(item => {
+        if (item.id && item.thuongHieu) {
+            idSpToBrand.set(item.id.toLowerCase(), item.thuongHieu);
+        }
+    });
     const nppIndex = donHangHeaders.indexOf("npp");
     const ngayIndex = donHangHeaders.indexOf("ngay");
     const mdhIndex = donHangHeaders.indexOf("mdh");
     const idSpIndex = donHangHeaders.indexOf("id_sp");
     const tenIndex = donHangHeaders.indexOf("ten");
     const slgIndex = donHangHeaders.indexOf("slg");
+    const donHangThuongHieuIndex = donHangHeaders.findIndex(h => slugifyColumnKey(h) === "thuong_hieu" || slugifyColumnKey(h) === "thuonghieu");
     const filterDateFrom = document.getElementById("reportDateFrom")?.value || "";
     const filterDateTo = document.getElementById("reportDateTo")?.value || "";
     const filterNpp = String(document.getElementById("reportNpp")?.value || "").trim().toLowerCase();
+    const filterBrand = String(document.getElementById("reportThuongHieu")?.value || "").trim().toLowerCase();
     const filterIdSp = String(document.getElementById("reportIdSp")?.value || "").trim().toLowerCase();
     const fromTime = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : 0;
     const toTime = filterDateTo ? new Date(`${filterDateTo}T23:59:59`).getTime() : 0;
     const skuSet = new Set();
     const nppSales = new Map();
+    const brandSales = new Map();
+    const allBrandSales = new Map();
+    const allMonthlySales = new Map();
     const skuSales = new Map();
     const dateSales = new Map();
     const monthlyCollectedDebt = new Map();
     let totalSales = 0;
     let totalQuantity = 0;
     let totalCommission = 0;
+    let allBrandsTotalSales = 0;
 
     donHangRows.forEach(row => {
         const npp = String(row[nppIndex] || "").trim() || "Không có NPP";
@@ -418,16 +631,71 @@ async function buildBaoCaoData() {
         const mdh = String(row[mdhIndex] || "").trim();
         const idSp = String(row[idSpIndex] || "").trim();
         const productName = String(row[tenIndex] || "").trim();
+        let brand = "";
+        if (donHangThuongHieuIndex >= 0) {
+            brand = String(row[donHangThuongHieuIndex] || "").trim();
+        }
+        if (!brand && idSp) {
+            brand = idSpToBrand.get(idSp.toLowerCase()) || "";
+        }
+        if (!brand && productName) {
+            const matchedProd = dsSpOptions.find(p => p.ten && p.ten.toLowerCase() === productName.toLowerCase());
+            if (matchedProd?.thuongHieu) brand = matchedProd.thuongHieu;
+        }
+        if (!brand) brand = "Chưa phân loại";
+
         const rowTime = getDateTime(ngay);
         if (fromTime && rowTime < fromTime) return;
         if (toTime && rowTime > toTime) return;
         if (filterNpp && npp.toLowerCase() !== filterNpp) return;
         if (filterIdSp && idSp.toLowerCase() !== filterIdSp) return;
+
         const quantity = parseMoney(row[slgIndex]);
         const sales = getDonHangItemSales(row, donHangHeaders);
+
+        // Track across all brands in the period so brand commission tabs always work
+        allBrandsTotalSales += sales;
+        if (!allBrandSales.has(brand)) {
+            allBrandSales.set(brand, {
+                brand,
+                sales: 0,
+                quantity: 0,
+                monthlySales: new Map()
+            });
+        }
+        const allBrandEntry = allBrandSales.get(brand);
+        allBrandEntry.sales += sales;
+        allBrandEntry.quantity += quantity;
+        if (ngay) {
+            const d = new Date(rowTime);
+            if (d.getTime() > 0) {
+                const monthStr = `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+                allBrandEntry.monthlySales.set(monthStr, (allBrandEntry.monthlySales.get(monthStr) || 0) + sales);
+                allMonthlySales.set(monthStr, (allMonthlySales.get(monthStr) || 0) + sales);
+            }
+        }
+
+        if (filterBrand && brand.toLowerCase() !== filterBrand) return;
+
         totalSales += sales;
         totalQuantity += quantity;
         if (idSp) skuSet.add(idSp);
+
+        if (!brandSales.has(brand)) {
+            brandSales.set(brand, {
+                brand,
+                sales: 0,
+                quantity: 0,
+                orders: new Set(),
+                skuSet: new Set()
+            });
+        }
+        const bEntry = brandSales.get(brand);
+        bEntry.sales += sales;
+        bEntry.quantity += quantity;
+        if (mdh) bEntry.orders.add(mdh);
+        if (idSp) bEntry.skuSet.add(idSp);
+
         if (!nppSales.has(npp)) {
             nppSales.set(npp, {
                 npp,
@@ -501,13 +769,40 @@ async function buildBaoCaoData() {
         }))
         .sort((a, b) => b.sales - a.sales);
 
+    const brandRowsReport = [...brandSales.values()]
+        .map(entry => ({
+            ...entry,
+            orderCount: entry.orders.size,
+            skuCount: entry.skuSet.size
+        }))
+        .sort((a, b) => b.sales - a.sales);
+
+    // Ensure all brands from DS_SP are also available in allBrandSales for clicking in commission tabs
+    dsSpOptions.forEach(item => {
+        if (item.thuongHieu && !allBrandSales.has(item.thuongHieu)) {
+            allBrandSales.set(item.thuongHieu, {
+                brand: item.thuongHieu,
+                sales: 0,
+                quantity: 0,
+                monthlySales: new Map()
+            });
+        }
+    });
+
+    const allBrandRows = [...allBrandSales.values()].sort((a, b) => b.sales - a.sales || a.brand.localeCompare(b.brand, "vi"));
+
     return {
         totalSales,
         totalQuantity,
         totalCommission,
         totalSku: skuSet.size,
+        allBrandsTotalSales,
         bestNpp: nppRowsReport[0] || null,
         nppRows: nppRowsReport,
+        brandRows: brandRowsReport,
+        allBrandRows,
+        allBrandSales,
+        allMonthlySales,
         skuRows: [...skuSales.values()].sort((a, b) => b.sales - a.sales),
         monthlyCollectedDebtRows: [...monthlyCollectedDebt.entries()].map(([month, collectedDebt]) => ({ month, collectedDebt })),
         dateRows: [...dateSales.values()]
@@ -540,10 +835,12 @@ function updateModuleTitle() {
 function updateModuleActions() {
     const uploadBtn = document.getElementById("uploadBtn");
     const addBtn = document.getElementById("addBtn");
+    const columnConfigBtn = document.getElementById("columnConfigBtn");
     const searchContainer = document.querySelector(".search-container");
     const isReport = getModuleConfig().reportOnly;
     if (uploadBtn) uploadBtn.style.display = currentModule === "CONG_VIEC" || isReport ? "none" : "flex";
     if (addBtn) addBtn.style.display = isReport ? "none" : "flex";
+    if (columnConfigBtn) columnConfigBtn.style.display = "inline-flex";
     if (searchContainer) searchContainer.style.display = isReport ? "none" : "block";
     updateBulkDeleteButton();
 }
@@ -662,13 +959,13 @@ async function fetchData(seq = moduleLoadSeq) {
         return;
     }
 
-    const headers = getHeaders();
     showLoading(`Đang tải dữ liệu ${currentModule}...`);
     try {
         if (currentModule === "DON_HANG" || currentModule === "CONG_NO") await loadNppOptions();
         if (seq !== moduleLoadSeq) return;
         await ensureModuleSheet(currentModule);
         if (seq !== moduleLoadSeq) return;
+        const headers = getHeaders();
         const range = `${quoteSheetName(currentModule)}!A2:${colName(headers.length - 1)}`;
         const data = await sheetsFetch(`/values/${encodeURIComponent(range)}`);
         if (seq !== moduleLoadSeq) return;
@@ -678,6 +975,9 @@ async function fetchData(seq = moduleLoadSeq) {
             normalized._sheetRow = index + 2;
             return normalized;
         });
+        if (currentModule === "DS_SP") {
+            await renderFilterPanel();
+        }
         filteredData = [...allData];
         applyCurrentFilters();
         currentPage = 1;
@@ -695,18 +995,28 @@ async function fetchData(seq = moduleLoadSeq) {
 async function renderFilterPanel() {
     const panel = document.getElementById("filterPanel");
     if (getModuleConfig().reportOnly) {
+        const prevFrom = document.getElementById("reportDateFrom")?.value || getQuickDateRange("month").from;
+        const prevTo = document.getElementById("reportDateTo")?.value || getQuickDateRange("month").to;
+        const prevNpp = document.getElementById("reportNpp")?.value || "";
+        const prevBrand = document.getElementById("reportThuongHieu")?.value || "";
+        const prevIdSp = document.getElementById("reportIdSp")?.value || "";
+        const brandList = getDsSpBrandOptions();
         panel.innerHTML = `
-            <label><span>Từ ngày</span><input id="reportDateFrom" type="date" value="${getQuickDateRange('month').from}" onchange="fetchData()"></label>
-            <label><span>Tới ngày</span><input id="reportDateTo" type="date" value="${getQuickDateRange('month').to}" onchange="fetchData()"></label>
+            <label><span>Từ ngày</span><input id="reportDateFrom" type="date" value="${escapeHtml(prevFrom)}" onchange="fetchData()"></label>
+            <label><span>Tới ngày</span><input id="reportDateTo" type="date" value="${escapeHtml(prevTo)}" onchange="fetchData()"></label>
             ${renderQuickDateButtons("report")}
             <label><span>NPP</span><select id="reportNpp" onchange="fetchData()">
                 <option value="">Tất cả NPP</option>
-                ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
+                ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === prevNpp ? "selected" : ""}>${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
             </select></label>
-            <label><span>ID_SP</span><input id="reportIdSp" type="text" placeholder="Lọc ID_SP..." oninput="fetchData()"></label>
+            <label><span>Thương hiệu</span><select id="reportThuongHieu" onchange="onReportBrandFilterChange(this.value)">
+                <option value="">Tất cả thương hiệu</option>
+                ${brandList.map(b => `<option value="${escapeHtml(b)}" ${b === prevBrand ? "selected" : ""}>${escapeHtml(b)}</option>`).join("")}
+            </select></label>
+            <label><span>ID_SP</span><input id="reportIdSp" type="text" value="${escapeHtml(prevIdSp)}" placeholder="Lọc ID_SP..." oninput="fetchData()"></label>
         `;
-        if (!nppOptions.length) {
-            loadNppOptions().then(() => {
+        if (!nppOptions.length || !dsSpOptions.length) {
+            Promise.all([loadNppOptions(), loadDsSpOptions()]).then(() => {
                 if (currentModule === "BAO_CAO") renderFilterPanel();
             }).catch(console.error);
         }
@@ -779,6 +1089,17 @@ async function renderFilterPanel() {
         lucide.createIcons();
         return;
     }
+    if (currentModule === "DS_SP") {
+        const currentBrand = document.getElementById("filterThuongHieu")?.value || "";
+        const brands = getDsSpBrandOptions();
+        panel.innerHTML = `
+            <label><span>Thương hiệu</span><select id="filterThuongHieu" onchange="filterTable()">
+                <option value="">Tất cả thương hiệu</option>
+                ${brands.map(brand => `<option value="${escapeHtml(brand)}" ${currentBrand === brand ? "selected" : ""}>${escapeHtml(brand)}</option>`).join("")}
+            </select></label>
+        `;
+        return;
+    }
     panel.innerHTML = "";
 }
 
@@ -801,11 +1122,164 @@ function getDateTime(value) {
     return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
-function sortFilteredDataByNgayDesc() {
+function compareValuesForSort(valA, valB, type, direction) {
+    const rawA = String(valA ?? "").trim();
+    const rawB = String(valB ?? "").trim();
+    const emptyA = rawA === "";
+    const emptyB = rawB === "";
+    if (emptyA && emptyB) return 0;
+    if (emptyA) return 1;
+    if (emptyB) return -1;
+
+    const dir = direction === "desc" ? -1 : 1;
+    if (type === "date") {
+        const timeA = getDateTime(rawA);
+        const timeB = getDateTime(rawB);
+        if (timeA !== timeB) return (timeA - timeB) * dir;
+    } else if (type === "number") {
+        const numA = parseMoney(rawA);
+        const numB = parseMoney(rawB);
+        if (numA !== numB) return (numA - numB) * dir;
+    }
+    return rawA.localeCompare(rawB, "vi", { numeric: true, sensitivity: "base" }) * dir;
+}
+
+let lastColResizeTime = 0;
+
+function toggleColumnSort(header) {
+    if (Date.now() - lastColResizeTime < 220) return;
+    const current = moduleSortState[currentModule];
+    let nextDirection = "desc";
+    if (current && current.column === header) {
+        nextDirection = current.direction === "desc" ? "asc" : "desc";
+    } else {
+        const colType = header === "tong_tien" || header === "tien_hoa_hong"
+            ? "number"
+            : getColumnType(header, currentModule);
+        nextDirection = colType === "number" || colType === "date" ? "desc" : "asc";
+    }
+    moduleSortState[currentModule] = { column: header, direction: nextDirection };
+    sortFilteredData();
+    currentPage = 1;
+    renderHeaders();
+    renderTable();
+}
+
+function startColumnResize(event, header) {
+    event.preventDefault();
+    event.stopPropagation();
+    const resizer = event.currentTarget;
+    const th = resizer?.closest("th");
+    if (!th) return;
+    const colIndex = th.cellIndex;
+    const startX = event.clientX;
+    const startWidth = th.getBoundingClientRect().width;
+    let finalWidth = Math.max(50, Math.round(startWidth));
+
+    resizer.classList.add("is-resizing");
+    document.body.classList.add("is-col-resizing");
+
+    const applyWidthToColumn = (w) => {
+        const px = `${w}px`;
+        th.style.width = px;
+        th.style.minWidth = px;
+        th.style.maxWidth = px;
+        const tbody = document.getElementById("tableBody");
+        if (tbody && colIndex >= 0) {
+            for (const row of tbody.rows) {
+                const td = row.cells[colIndex];
+                if (td && td.colSpan === 1) {
+                    td.style.width = px;
+                    td.style.minWidth = px;
+                    td.style.maxWidth = px;
+                }
+            }
+        }
+    };
+
+    const onMouseMove = (moveEvent) => {
+        const deltaX = moveEvent.clientX - startX;
+        finalWidth = Math.max(50, Math.round(startWidth + deltaX));
+        applyWidthToColumn(finalWidth);
+    };
+
+    const onMouseUp = () => {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+        resizer.classList.remove("is-resizing");
+        document.body.classList.remove("is-col-resizing");
+        lastColResizeTime = Date.now();
+
+        const currentCfg = getModuleColumnConfig(currentModule);
+        const existingSaved = customColumnConfigs[currentModule] || {};
+        customColumnConfigs[currentModule] = {
+            headers: currentCfg.headers,
+            hiddenHeaders: currentCfg.hiddenHeaders,
+            labels: currentCfg.labels,
+            types: currentCfg.types,
+            widths: { ...currentCfg.widths, [header]: finalWidth },
+            aligns: currentCfg.aligns,
+            removedDefaultHeaders: existingSaved.removedDefaultHeaders || []
+        };
+        saveStoredColumnConfigs();
+
+        if (document.getElementById("columnConfigModal")?.classList.contains("active") && columnConfigEditingModule === currentModule) {
+            const tr = [...document.querySelectorAll("#columnConfigBody tr")].find(r => r.dataset.origKey === header);
+            const widthInput = tr?.querySelector('[data-col-field="width"]');
+            if (widthInput) widthInput.value = finalWidth;
+        }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+}
+
+function sortFilteredData() {
+    const activeSort = moduleSortState[currentModule];
+    if (activeSort && activeSort.column && currentModule !== "DON_HANG") {
+        const { column, direction } = activeSort;
+        const colIndex = getHeaderIndex(column, currentModule);
+        const colType = column === "cong_no_con_lai" || column === "tien_hoa_hong"
+            ? "number"
+            : getColumnType(column, currentModule);
+        const congNoBalanceMap = currentModule === "CONG_NO" && column === "cong_no_con_lai"
+            ? getCongNoBalanceMap()
+            : null;
+
+        filteredData.sort((a, b) => {
+            let valA = colIndex >= 0 ? a[colIndex] : "";
+            let valB = colIndex >= 0 ? b[colIndex] : "";
+            if (currentModule === "CONG_NO" && column === "cong_no_con_lai") {
+                valA = congNoBalanceMap?.get(Number(a._sheetRow)) ?? "";
+                valB = congNoBalanceMap?.get(Number(b._sheetRow)) ?? "";
+            } else if (currentModule === "CONG_NO" && column === "npp") {
+                valA = getNppDisplayName(valA);
+                valB = getNppDisplayName(valB);
+            }
+            const cmp = compareValuesForSort(valA, valB, colType, direction);
+            if (cmp !== 0) return cmp;
+            return Number(b._sheetRow || 0) - Number(a._sheetRow || 0);
+        });
+        return;
+    }
     if (!["DON_HANG", "CONG_NO", "CONG_VIEC"].includes(currentModule)) return;
     const ngayIndex = getHeaderIndex("ngay", currentModule);
     if (ngayIndex < 0) return;
     filteredData.sort((a, b) => getDateTime(b[ngayIndex]) - getDateTime(a[ngayIndex]) || Number(b._sheetRow || 0) - Number(a._sheetRow || 0));
+}
+
+function getDonHangSummaryCellValue(summaryRow, header, storageHeaders) {
+    if (header === "ngay") return summaryRow.ngay;
+    if (header === "mdh") return summaryRow.mdh;
+    if (header === "npp") return getNppDisplayName(summaryRow.npp);
+    if (header === "tong_tien") return summaryRow.tong_tien;
+    const colIdx = storageHeaders.indexOf(header);
+    if (colIdx < 0) return "";
+    if (isNumericHeader(header, "DON_HANG") && ["slg", "thanh_tien", "tien_chiet_khau", "tien_hang"].includes(header)) {
+        return (summaryRow.rawRows || []).reduce((acc, r) => acc + parseMoney(r[colIdx]), 0);
+    }
+    const vals = [...new Set((summaryRow.rawRows || []).map(r => String(r[colIdx] || "").trim()).filter(Boolean))];
+    return vals.join(", ");
 }
 
 function getDonHangSummaryRows(rows = filteredData) {
@@ -823,16 +1297,29 @@ function getDonHangSummaryRows(rows = filteredData) {
                 mdh,
                 npp: String(row[nppIndex] || "").trim(),
                 tong_tien: 0,
-                sheetRows: []
+                sheetRows: [],
+                rawRows: []
             });
         }
         const entry = groups.get(key);
         entry.tong_tien += getDonHangItemSales(row, headers);
         entry.sheetRows.push(Number(row._sheetRow));
+        entry.rawRows.push(row);
         if (getDateTime(row[ngayIndex]) > getDateTime(entry.ngay)) entry.ngay = String(row[ngayIndex] || "").trim();
         if (!entry.npp && row[nppIndex]) entry.npp = String(row[nppIndex] || "").trim();
     });
-    return [...groups.values()].sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay));
+    const list = [...groups.values()];
+    const activeSort = moduleSortState.DON_HANG;
+    if (activeSort && activeSort.column) {
+        const { column, direction } = activeSort;
+        const colType = column === "tong_tien" ? "number" : (column === "npp" ? "text" : getColumnType(column, "DON_HANG"));
+        return list.sort((a, b) => {
+            const valA = getDonHangSummaryCellValue(a, column, headers);
+            const valB = getDonHangSummaryCellValue(b, column, headers);
+            return compareValuesForSort(valA, valB, colType, direction) || (getDateTime(b.ngay) - getDateTime(a.ngay));
+        });
+    }
+    return list.sort((a, b) => getDateTime(b.ngay) - getDateTime(a.ngay));
 }
 
 function getCurrentDisplayRowCount() {
@@ -1032,9 +1519,15 @@ function applyCurrentFilters() {
                 && (!trangThai || String(row[trangThaiIndex] || "").toLowerCase().includes(trangThai));
         }
 
+        if (currentModule === "DS_SP") {
+            const thuongHieuIndex = getHeaderIndex("thuong_hieu", "DS_SP");
+            const filterBrand = (document.getElementById("filterThuongHieu")?.value || "").trim().toLowerCase();
+            return !filterBrand || thuongHieuIndex < 0 || String(row[thuongHieuIndex] || "").trim().toLowerCase() === filterBrand;
+        }
+
         return true;
     });
-    sortFilteredDataByNgayDesc();
+    sortFilteredData();
 }
 
 function renderHeaders() {
@@ -1043,14 +1536,34 @@ function renderHeaders() {
         head.innerHTML = "";
         return;
     }
-    const headers = currentModule === "DON_HANG" ? ["ngay", "mdh", "npp", "tong_tien"] : getHeaders().filter(header => header !== "id");
+    const headers = getVisibleTableHeaders(currentModule);
+    const activeSort = moduleSortState[currentModule];
     head.innerHTML = `<tr>
         <th class="select-col">
             <input id="selectAllRows" type="checkbox" onchange="toggleSelectAllRows(this)" onclick="event.stopPropagation()" title="Chọn tất cả dòng đang lọc">
         </th>
-        ${headers.map(header => `<th>${escapeHtml(header.toUpperCase())}</th>`).join("")}
+        ${headers.map(header => {
+            const isSorted = activeSort && activeSort.column === header;
+            const sortIcon = isSorted
+                ? (activeSort.direction === "asc" ? "arrow-up" : "arrow-down")
+                : "arrow-up-down";
+            const sortTitle = isSorted
+                ? (activeSort.direction === "asc" ? "Đang xếp Tăng dần (bấm để Giảm dần)" : "Đang xếp Giảm dần (bấm để Tăng dần)")
+                : `Sắp xếp theo cột ${getHeaderLabel(header, currentModule)}`;
+            const styleAttr = getCellStyleAttr(header, currentModule);
+            return `<th class="sortable-th ${isSorted ? "is-sorted" : ""}"${styleAttr} onclick="toggleColumnSort('${escapeJsString(header)}')" title="${escapeHtml(sortTitle)}">
+                <span class="th-col-label">
+                    ${escapeHtml(getHeaderLabel(header, currentModule))}
+                    <button type="button" class="th-col-sort-btn ${isSorted ? "active" : ""}" onclick="event.stopPropagation(); toggleColumnSort('${escapeJsString(header)}')" title="${escapeHtml(sortTitle)}">
+                        <i data-lucide="${sortIcon}" style="width:14px;"></i>
+                    </button>
+                </span>
+                <span class="col-resizer" onmousedown="startColumnResize(event, '${escapeJsString(header)}')" onclick="event.stopPropagation()" title="Kéo để chỉnh độ rộng cột"></span>
+            </th>`;
+        }).join("")}
     </tr>`;
     syncSelectAllCheckbox();
+    lucide.createIcons();
 }
 
 function renderTable() {
@@ -1074,18 +1587,30 @@ function renderTable() {
     const tbody = document.getElementById("tableBody");
     const storageHeaders = getHeaders();
     if (currentModule === "DON_HANG") {
-        const headers = ["ngay", "mdh", "npp", "tong_tien"];
+        const headers = getVisibleTableHeaders("DON_HANG");
         const start = (currentPage - 1) * rowsPerPage;
         const pageData = getDonHangSummaryRows().slice(start, start + rowsPerPage);
         tbody.innerHTML = pageData.map(row => {
             const sheetRows = row.sheetRows.join(",");
             const allChecked = row.sheetRows.length > 0 && row.sheetRows.every(sheetRow => selectedSheetRows.has(sheetRow));
-            const cells = [
-                row.ngay,
-                row.mdh,
-                getNppDisplayName(row.npp),
-                formatDisplayNumber(row.tong_tien)
-            ].map(value => `<td>${escapeHtml(value)}</td>`).join("");
+            const cells = headers.map(header => {
+                const styleAttr = getCellStyleAttr(header, "DON_HANG");
+                if (header === "ngay") return `<td${styleAttr}>${escapeHtml(row.ngay)}</td>`;
+                if (header === "mdh") return `<td${styleAttr}>${escapeHtml(row.mdh)}</td>`;
+                if (header === "npp") return `<td${styleAttr}>${escapeHtml(getNppDisplayName(row.npp))}</td>`;
+                if (header === "tong_tien") return `<td${styleAttr}>${escapeHtml(formatDisplayNumber(row.tong_tien))}</td>`;
+                const colIdx = storageHeaders.indexOf(header);
+                if (colIdx < 0) return `<td${styleAttr}></td>`;
+                if (isNumericHeader(header, "DON_HANG") && ["slg", "thanh_tien", "tien_chiet_khau", "tien_hang"].includes(header)) {
+                    const sumVal = (row.rawRows || []).reduce((acc, r) => acc + parseMoney(r[colIdx]), 0);
+                    return `<td${styleAttr}>${escapeHtml(formatDisplayNumber(sumVal))}</td>`;
+                }
+                const vals = [...new Set((row.rawRows || []).map(r => String(r[colIdx] || "").trim()).filter(Boolean))];
+                const text = isNumericHeader(header, "DON_HANG")
+                    ? vals.map(v => formatDisplayNumber(v)).join(", ")
+                    : vals.join(", ");
+                return `<td${styleAttr}>${escapeHtml(text)}</td>`;
+            }).join("");
             const selectCell = `<td class="select-col">
                 <input class="row-select-checkbox" type="checkbox" data-sheet-row="${escapeHtml(sheetRows)}" ${allChecked ? "checked" : ""} onclick="event.stopPropagation()" onchange="toggleMultipleRowSelection('${escapeJsString(sheetRows)}', this.checked)">
             </td>`;
@@ -1099,14 +1624,15 @@ function renderTable() {
         renderPagination();
         return;
     }
-    const headers = currentModule === "DON_HANG" ? [...storageHeaders, "tien_hoa_hong"] : storageHeaders.filter(header => header !== "id");
+    const headers = getVisibleTableHeaders(currentModule);
     const mdhIndex = storageHeaders.indexOf("mdh");
     const nppIndex = storageHeaders.indexOf("npp");
     const start = (currentPage - 1) * rowsPerPage;
     const pageData = filteredData.slice(start, start + rowsPerPage);
     const congNoBalanceMap = currentModule === "CONG_NO" ? getCongNoBalanceMap() : null;
     tbody.innerHTML = pageData.map((row, rowIndex) => {
-        const cells = headers.map((header, index) => {
+        const cells = headers.map((header) => {
+            const styleAttr = getCellStyleAttr(header, currentModule);
             const sourceIndex = storageHeaders.indexOf(header);
             let value = header === "tien_hoa_hong"
                 ? getDonHangItemSales(row, storageHeaders) * getNppCommissionRate(row[nppIndex])
@@ -1119,10 +1645,10 @@ function renderTable() {
             }
             const text = String(value).trim();
             if (text.startsWith("http://") || text.startsWith("https://")) {
-                return `<td><a href="${escapeHtml(text)}" target="_blank">Link</a></td>`;
+                return `<td${styleAttr}><a href="${escapeHtml(text)}" target="_blank">Link</a></td>`;
             }
             const displayValue = isNumericHeader(header) || header === "tien_hoa_hong" ? formatDisplayNumber(value) : value;
-            return `<td>${escapeHtml(displayValue)}</td>`;
+            return `<td${styleAttr}>${escapeHtml(displayValue)}</td>`;
         }).join("");
         const sheetRow = Number(row._sheetRow);
         const selectCell = `<td class="select-col">
@@ -1176,25 +1702,38 @@ function getSalesCommissionBreakdown(totalSales) {
 
 function renderBaoCao() {
     document.getElementById("reportView")?.remove();
-    const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, bestNpp: null, nppRows: [], skuRows: [], monthlyCollectedDebtRows: [], dateRows: [] };
+    const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, allBrandsTotalSales: 0, bestNpp: null, nppRows: [], brandRows: [], allBrandRows: [], allBrandSales: new Map(), allMonthlySales: new Map(), skuRows: [], monthlyCollectedDebtRows: [], dateRows: [] };
     const reportNppName = row => row?.nppName || row?.npp || "";
     const skuPageSize = 10;
-    const skuTotalPages = Math.max(Math.ceil(data.skuRows.length / skuPageSize), 1);
+    const skuTotalPages = Math.max(Math.ceil((data.skuRows || []).length / skuPageSize), 1);
     reportSkuPage = Math.min(Math.max(reportSkuPage, 1), skuTotalPages);
-    const skuPageRows = data.skuRows.slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
+    const skuPageRows = (data.skuRows || []).slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
     
+    const activeBrand = reportCommissionSelectedBrand || "ALL";
+    let monthlySales = new Map();
+    if (activeBrand === "ALL") {
+        if (data.allMonthlySales && data.allMonthlySales.size) {
+            monthlySales = new Map(data.allMonthlySales);
+        } else {
+            (data.dateRows || []).forEach(row => {
+                const d = new Date(getDateTime(row.ngay));
+                if (d.getTime() > 0) {
+                    const monthStr = (d.getMonth() + 1).toString().padStart(2, "0") + "/" + d.getFullYear();
+                    monthlySales.set(monthStr, (monthlySales.get(monthStr) || 0) + row.sales);
+                }
+            });
+        }
+    } else {
+        const brandEntry = data.allBrandSales?.get(activeBrand);
+        if (brandEntry && brandEntry.monthlySales) {
+            monthlySales = new Map(brandEntry.monthlySales);
+        }
+    }
+
     let totalMonthlyCommission = 0;
     let sum_under524 = 0, sum_524_874 = 0, sum_base874 = 0;
     let sum_over_1 = 0, sum_over_15 = 0, sum_over_175 = 0, sum_over_185 = 0, sum_over_2 = 0;
     const monthlyCommissionRows = [];
-    const monthlySales = new Map();
-    data.dateRows.forEach(row => {
-        const d = new Date(getDateTime(row.ngay));
-        if (d.getTime() > 0) {
-            const monthStr = (d.getMonth() + 1).toString().padStart(2, '0') + '/' + d.getFullYear();
-            monthlySales.set(monthStr, (monthlySales.get(monthStr) || 0) + row.sales);
-        }
-    });
     for (const [month, sales] of monthlySales.entries()) {
         const bd = getSalesCommissionBreakdown(sales);
         const commission = bd.total;
@@ -1222,8 +1761,8 @@ function renderBaoCao() {
         totalMonthlyCommission += commission;
     }
     monthlyCommissionRows.sort((a, b) => {
-        const [am, ay] = a.month.split('/');
-        const [bm, by] = b.month.split('/');
+        const [am, ay] = a.month.split("/");
+        const [bm, by] = b.month.split("/");
         return (by - ay) || (bm - am);
     });
 
@@ -1240,8 +1779,8 @@ function renderBaoCao() {
             target90Sales: sales * 0.9
         };
     }).sort((a, b) => {
-        const [am, ay] = a.month.split('/');
-        const [bm, by] = b.month.split('/');
+        const [am, ay] = a.month.split("/");
+        const [bm, by] = b.month.split("/");
         return (by - ay) || (bm - am);
     });
     const totalCollectedDebt = monthlyCollectionRows.reduce((sum, row) => sum + row.collectedDebt, 0);
@@ -1250,9 +1789,9 @@ function renderBaoCao() {
     const formatPercent = value => `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(Number(value) || 0)}%`;
 
     const chartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
-    const chartTotal = data.nppRows.reduce((sum, row) => sum + row.sales, 0);
+    const chartTotal = (data.nppRows || []).reduce((sum, row) => sum + row.sales, 0);
     let chartCursor = 0;
-    const chartSegments = data.nppRows.map((row, index) => {
+    const chartSegments = (data.nppRows || []).map((row, index) => {
         const start = chartCursor;
         const percent = chartTotal ? (row.sales / chartTotal) * 100 : 0;
         chartCursor += percent;
@@ -1263,6 +1802,22 @@ function renderBaoCao() {
             segment: `${chartColors[index % chartColors.length]} ${start}% ${chartCursor}%`
         };
     });
+
+    const brandChartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#00acc1", "#ff7043", "#3949ab", "#8d6e63", "#26a69a"];
+    const brandChartTotal = (data.brandRows || []).reduce((sum, row) => sum + row.sales, 0);
+    let brandChartCursor = 0;
+    const brandChartSegments = (data.brandRows || []).map((row, index) => {
+        const start = brandChartCursor;
+        const percent = brandChartTotal ? (row.sales / brandChartTotal) * 100 : 0;
+        brandChartCursor += percent;
+        return {
+            ...row,
+            color: brandChartColors[index % brandChartColors.length],
+            percent,
+            segment: `${brandChartColors[index % brandChartColors.length]} ${start}% ${brandChartCursor}%`
+        };
+    });
+
     const report = document.createElement("section");
     report.id = "reportView";
     report.className = "report-view";
@@ -1281,11 +1836,11 @@ function renderBaoCao() {
                 <strong>${escapeHtml(formatDisplayNumber(data.totalSku))}</strong>
             </article>
             <article>
-                <span>Tổng hoa hồng</span>
+                <span>${activeBrand === "ALL" ? "Tổng hoa hồng" : `Hoa hồng (${escapeHtml(activeBrand)})`}</span>
                 <strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong>
             </article>
         </div>
-        <div class="report-grid dashboard-report-group">
+        <div class="report-charts-grid">
             <section class="report-panel npp-chart-panel">
                 <h2>Biểu đồ doanh số NPP</h2>
                 <div class="sales-chart">
@@ -1309,35 +1864,76 @@ function renderBaoCao() {
                                 `).join("")}
                             </div>
                         </div>
-                    ` : `<div class="report-empty">Chưa có dữ liệu doanh số.</div>`}
+                    ` : `<div class="report-empty">Chưa có dữ liệu doanh số NPP.</div>`}
                 </div>
             </section>
-        </div>
-        <div class="report-chart-pair">
             <section class="report-panel commission-chart-panel">
                 <h2>Tổng tiền theo ngày</h2>
-                ${data.dateRows.length
-            ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
-            : `<div class="report-empty">Chưa có dữ liệu hoa hồng.</div>`}
+                ${(data.dateRows || []).length
+                    ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
+                    : `<div class="report-empty">Chưa có dữ liệu theo ngày.</div>`}
+            </section>
+            <section class="report-panel brand-chart-panel">
+                <h2>Biểu đồ doanh số Thương hiệu</h2>
+                <div class="sales-chart">
+                    ${brandChartSegments.length ? `
+                        <div class="sales-pie-layout">
+                            <div class="sales-pie" style="background: conic-gradient(${brandChartSegments.map(item => item.segment).join(", ")});">
+                                <div class="sales-pie-center">
+                                    <span>Tổng</span>
+                                    <strong>${escapeHtml(formatDisplayNumber(brandChartTotal))}</strong>
+                                </div>
+                            </div>
+                            <div class="sales-pie-legend">
+                                ${brandChartSegments.map(item => `
+                                    <div class="sales-pie-legend-item brand-legend-item" onclick="selectReportCommissionBrand('${escapeJsString(item.brand)}')" title="Bấm để xem hoa hồng của ${escapeHtml(item.brand)}">
+                                        <i style="background:${escapeHtml(item.color)}"></i>
+                                        <div>
+                                            <strong>${escapeHtml(item.brand)}</strong>
+                                            <span>${escapeHtml(formatDisplayNumber(item.sales))} (${item.percent.toFixed(1)}%)</span>
+                                        </div>
+                                    </div>
+                                `).join("")}
+                            </div>
+                        </div>
+                    ` : `<div class="report-empty">Chưa có dữ liệu thương hiệu.</div>`}
+                </div>
             </section>
         </div>
         <div class="report-grid dashboard-report-group">
             <section class="report-panel sales-commission-panel">
-                <h2>Hoa hồng theo doanh số</h2>
+                <div class="commission-header-bar">
+                    <div class="commission-title-group">
+                        <h2>Hoa hồng theo doanh số</h2>
+                        <span class="commission-brand-badge">${activeBrand === "ALL" ? "Tất cả thương hiệu" : escapeHtml(activeBrand)}</span>
+                    </div>
+                    <div class="commission-brand-filter-pills" role="tablist" aria-label="Lọc thương hiệu tính hoa hồng">
+                        <button type="button" class="brand-pill-btn ${activeBrand === 'ALL' ? 'active' : ''}" onclick="selectReportCommissionBrand('ALL')" title="Xem hoa hồng tất cả thương hiệu">
+                            <span class="pill-name">Tất cả thương hiệu</span>
+                            <span class="pill-val">${escapeHtml(formatDisplayNumber(data.allBrandsTotalSales || data.totalSales))}</span>
+                        </button>
+                        ${(data.allBrandRows || []).map(b => `
+                            <button type="button" class="brand-pill-btn ${activeBrand === b.brand ? 'active' : ''}" onclick="selectReportCommissionBrand('${escapeJsString(b.brand)}')" title="Xem hoa hồng thương hiệu ${escapeHtml(b.brand)}">
+                                <span class="pill-name">${escapeHtml(b.brand)}</span>
+                                <span class="pill-val">${escapeHtml(formatDisplayNumber(b.sales))}</span>
+                            </button>
+                        `).join("")}
+                    </div>
+                </div>
                 <div class="report-table-wrap">
                     <table>
                         <thead>
                             <tr>
                                 <th>Tháng</th>
-                                <th>Doanh số</th>
-                                <th>< 524tr (0%)</th>
+                                <th>Doanh số ${activeBrand === "ALL" ? "" : `(${escapeHtml(activeBrand)})`}</th>
+                                <th>&lt; 524tr (0%)</th>
                                 <th>524-874tr (0.5%)</th>
                                 <th>Cố định 874tr (1%)</th>
                                 <th>874tr-1.232tỷ (1%)</th>
                                 <th>1.232-1.456tỷ (1.5%)</th>
                                 <th>1.456-1.904tỷ (1.75%)</th>
                                 <th>1.904-2.24tỷ (1.85%)</th>
-                                <th>>= 2.24tỷ (2%)</th>
+                                <th>&gt;= 2.24tỷ (2%)</th>
                                 <th>Hoa hồng</th>
                             </tr>
                         </thead>
@@ -1356,19 +1952,21 @@ function renderBaoCao() {
                                     <td>${escapeHtml(formatDisplayNumber(row.t_over_2))}</td>
                                     <td><strong>${escapeHtml(formatDisplayNumber(row.commission))}</strong></td>
                                 </tr>
-                            `).join("")}
-                            <tr class="report-total-row">
-                                <td colspan="2">Tổng cộng</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_under524))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_524_874))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_base874))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_over_1))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_over_15))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_over_175))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_over_185))}</td>
-                                <td>${escapeHtml(formatDisplayNumber(sum_over_2))}</td>
-                                <td><strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong></td>
-                            </tr>
+                            `).join("") || `<tr><td colspan="11">Chưa có dữ liệu hoa hồng cho ${escapeHtml(activeBrand === "ALL" ? "tất cả thương hiệu" : activeBrand)}.</td></tr>`}
+                            ${monthlyCommissionRows.length ? `
+                                <tr class="report-total-row">
+                                    <td colspan="2">Tổng cộng (${escapeHtml(activeBrand === "ALL" ? "Tất cả" : activeBrand)})</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_under524))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_524_874))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_base874))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_over_1))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_over_15))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_over_175))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_over_185))}</td>
+                                    <td>${escapeHtml(formatDisplayNumber(sum_over_2))}</td>
+                                    <td><strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong></td>
+                                </tr>
+                            ` : ""}
                         </tbody>
                     </table>
                 </div>
@@ -1433,12 +2031,12 @@ function renderBaoCao() {
                         </tbody>
                     </table>
                 </div>
-                ${data.skuRows.length > skuPageSize ? `
+                ${(data.skuRows || []).length > skuPageSize ? `
                     <div class="report-table-pagination">
                         <button type="button" class="pagination-btn" onclick="changeReportSkuPage(-1)" ${reportSkuPage === 1 ? "disabled" : ""}>
                             <i data-lucide="chevron-left" style="width:16px;"></i> Trước
                         </button>
-                        <div class="page-info">Trang ${reportSkuPage} / ${skuTotalPages} (${data.skuRows.length} dòng)</div>
+                        <div class="page-info">Trang ${reportSkuPage} / ${skuTotalPages} (${(data.skuRows || []).length} dòng)</div>
                         <button type="button" class="pagination-btn" onclick="changeReportSkuPage(1)" ${reportSkuPage === skuTotalPages ? "disabled" : ""}>
                             Tiếp <i data-lucide="chevron-right" style="width:16px;"></i>
                         </button>
@@ -1448,7 +2046,7 @@ function renderBaoCao() {
         </div>
     `;
     document.querySelector(".main-content").insertBefore(report, document.getElementById("pagination"));
-    if (data.dateRows.length) {
+    if ((data.dateRows || []).length) {
         requestAnimationFrame(() => drawDailySalesChart([...data.dateRows].sort((a, b) => getDateTime(a.ngay) - getDateTime(b.ngay))));
     }
 }
@@ -1463,9 +2061,9 @@ function changeReportSkuPage(delta) {
 function drawDailySalesChart(rows) {
     const canvas = document.getElementById("commissionLineChart");
     if (!canvas) return;
-    const containerWidth = canvas.parentElement?.clientWidth || 640;
-    const cssWidth = Math.max(containerWidth, 420);
-    const cssHeight = 300;
+    const containerWidth = canvas.parentElement?.clientWidth || 400;
+    const cssWidth = Math.max(containerWidth, 320);
+    const cssHeight = 280;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
@@ -1476,7 +2074,7 @@ function drawDailySalesChart(rows) {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, cssWidth, cssHeight);
 
-    const padding = { top: 46, right: 70, bottom: 52, left: 70 };
+    const padding = { top: 40, right: 30, bottom: 44, left: 56 };
     const plotWidth = cssWidth - padding.left - padding.right;
     const plotHeight = cssHeight - padding.top - padding.bottom;
     const salesAxisMax = Math.max(...rows.map(row => row.sales || 0), 1) * 1.1;
@@ -1512,14 +2110,14 @@ function drawDailySalesChart(rows) {
     rows.forEach((row, index) => {
         const x = xFor(index);
         const label = formatChartDateLabel(row.ngay);
-        const maxLabelWidth = Math.max(categoryWidth - 12, 44);
+        const maxLabelWidth = Math.max(categoryWidth - 8, 36);
         let compactLabel = label;
         while (compactLabel.length > 3 && ctx.measureText(`${compactLabel}...`).width > maxLabelWidth) {
             compactLabel = compactLabel.slice(0, -1);
         }
         if (compactLabel !== label) compactLabel += "...";
         ctx.fillStyle = "#64748b";
-        ctx.fillText(compactLabel, x, padding.top + plotHeight + 12);
+        ctx.fillText(compactLabel, x, padding.top + plotHeight + 10);
     });
     ctx.restore();
 
@@ -1779,8 +2377,15 @@ async function deleteSelectedRows() {
     }
 }
 
+const CORE_DON_HANG_HEADERS = ["id", "ngay", "mdh", "npp", "id_sp", "ten", "don_gia", "slg", "thanh_tien", "chiet_khau", "tien_chiet_khau", "tien_hang"];
+
+function getExtraDonHangHeaders() {
+    return getHeaders("DON_HANG").filter(h => !CORE_DON_HANG_HEADERS.includes(h));
+}
+
 function renderDonHangForm(rows = []) {
     const headers = getHeaders("DON_HANG");
+    const extraHeaders = getExtraDonHangHeaders();
     const ngayIndex = headers.indexOf("ngay");
     const mdhIndex = headers.indexOf("mdh");
     const nppIndex = headers.indexOf("npp");
@@ -1789,7 +2394,7 @@ function renderDonHangForm(rows = []) {
     const mdh = rows[0]?.[mdhIndex] || randomCode(10);
     const npp = rows[0]?.[nppIndex] || "";
     currentDonHangMdh = rows.length ? mdh : "";
-    const itemRows = rows.length ? rows : [[generateNextId(), ngay, mdh, npp, "", "", "", "", ""]];
+    const itemRows = rows.length ? rows : [headers.map(h => h === "id" ? generateNextId() : (h === "ngay" ? ngay : (h === "mdh" ? mdh : (h === "npp" ? npp : ""))))];
     const productOptions = dsSpOptions
         .map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.ten)}</option>`)
         .join("");
@@ -1800,18 +2405,18 @@ function renderDonHangForm(rows = []) {
     document.getElementById("formFields").innerHTML = `
         <section class="order-common-fields">
             <label>
-                <span>NGÀY</span>
+                <span>${escapeHtml(getHeaderLabel("ngay", "DON_HANG"))}</span>
                 <input id="donHangNgay" type="date" value="${escapeHtml(ngay)}">
             </label>
             <label>
-                <span>MDH</span>
+                <span>${escapeHtml(getHeaderLabel("mdh", "DON_HANG"))}</span>
                 <div class="inline-field">
                     <input id="donHangMdh" type="text" value="${escapeHtml(mdh)}">
                     <button type="button" class="secondary-btn compact-btn" onclick="generateQuickMdh()">Tạo MDH</button>
                 </div>
             </label>
             <label>
-                <span>NPP</span>
+                <span>${escapeHtml(getHeaderLabel("npp", "DON_HANG"))}</span>
                 <select id="donHangNpp">
                     <option value=""></option>
                     ${nppSelectOptions}
@@ -1828,14 +2433,15 @@ function renderDonHangForm(rows = []) {
                 <table class="order-items-table">
                     <thead>
                         <tr>
-                            <th>ID_SP</th>
-                            <th>TÊN</th>
-                            <th>ĐƠN GIÁ</th>
-                            <th>SLG</th>
-                            <th>THÀNH TIỀN</th>
-                            <th>CHIẾT KHẤU (%)</th>
-                            <th>TIỀN CK</th>
-                            <th>TIỀN HÀNG</th>
+                            <th>${escapeHtml(getHeaderLabel("id_sp", "DON_HANG"))}</th>
+                            <th>${escapeHtml(getHeaderLabel("ten", "DON_HANG"))}</th>
+                            <th>${escapeHtml(getHeaderLabel("don_gia", "DON_HANG"))}</th>
+                            <th>${escapeHtml(getHeaderLabel("slg", "DON_HANG"))}</th>
+                            <th>${escapeHtml(getHeaderLabel("thanh_tien", "DON_HANG"))}</th>
+                            <th>${escapeHtml(getHeaderLabel("chiet_khau", "DON_HANG"))} (%)</th>
+                            <th>${escapeHtml(getHeaderLabel("tien_chiet_khau", "DON_HANG"))}</th>
+                            <th>${escapeHtml(getHeaderLabel("tien_hang", "DON_HANG"))}</th>
+                            ${extraHeaders.map(h => `<th>${escapeHtml(getHeaderLabel(h, "DON_HANG"))}</th>`).join("")}
                             <th></th>
                         </tr>
                     </thead>
@@ -1851,6 +2457,7 @@ function renderDonHangForm(rows = []) {
 
 function renderDonHangItemRow(row, index) {
     const headers = getHeaders("DON_HANG");
+    const extraHeaders = getExtraDonHangHeaders();
     const idIndex = headers.indexOf("id");
     const idSpIndex = headers.indexOf("id_sp");
     const tenIndex = headers.indexOf("ten");
@@ -1873,6 +2480,11 @@ function renderDonHangItemRow(row, index) {
             <td><input data-order-field="chiet_khau" type="text" value="${escapeHtml(row[chietKhauIndex] || "")}" oninput="recalculateDonHangItems(this)" placeholder="%"></td>
             <td><input data-order-field="tien_chiet_khau" type="text" value="${escapeHtml(formatDisplayNumber(row[tienChietKhauIndex]) || "")}" oninput="recalculateDonHangItems(this)" onblur="this.value = formatDisplayNumber(this.value) || ''"></td>
             <td><input data-order-field="tien_hang" type="text" value="${escapeHtml(formatDisplayNumber(row[tienHangIndex]) || "")}" readonly></td>
+            ${extraHeaders.map(h => {
+                const hIdx = headers.indexOf(h);
+                const hType = getColumnType(h, "DON_HANG") === "date" ? "date" : "text";
+                return `<td><input data-order-field="${escapeHtml(h)}" type="${hType}" value="${escapeHtml(row[hIdx] || "")}"></td>`;
+            }).join("")}
             <td><button type="button" class="icon-btn" onclick="removeDonHangItem(this)" title="Xóa sản phẩm"><i data-lucide="trash-2" style="width:16px;"></i></button></td>
         </tr>
     `;
@@ -1990,37 +2602,45 @@ function setOptionButtonValue(button, value) {
 
 function renderFormFields(row = null) {
     const container = document.getElementById("formFields");
-    const textareaHeaders = getModuleConfig().textareaHeaders || [];
     const statusOptions = getModuleConfig().statusOptions || [];
-    container.innerHTML = getHeaders().map((header, index) => {
-        const rawValue = row?.[index] ?? (header === "id" ? generateNextId() : (header === "ngay" ? new Date().toISOString().slice(0, 10) : ""));
+    const brands = currentModule === "DS_SP" ? getDsSpBrandOptions() : [];
+    const brandDatalist = brands.length
+        ? `<datalist id="dsSpBrandList">${brands.map(b => `<option value="${escapeHtml(b)}"></option>`).join("")}</datalist>`
+        : "";
+    container.innerHTML = brandDatalist + getHeaders().map((header, index) => {
+        const colType = getColumnType(header, currentModule);
+        const rawValue = row?.[index] ?? (header === "id" ? generateNextId() : (colType === "date" ? new Date().toISOString().slice(0, 10) : ""));
         const value = escapeHtml(rawValue);
+        const labelText = escapeHtml(getHeaderLabel(header, currentModule));
         if (header === "id") {
             const readonly = row && currentModule !== "DS_SP" ? "readonly" : "";
-            return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="text" value="${value}" ${readonly}></label>`;
+            return `<label><span>${labelText}</span><input id="formField_${index}" type="text" value="${value}" ${readonly}></label>`;
         }
         if ((currentModule === "CONG_VIEC" && header === "tinh_trang") || (currentModule === "CONG_NO" && header === "truong")) {
             const optionValue = currentModule === "CONG_NO" && !rawValue ? "THU" : rawValue;
-            return `<label class="wide-field"><span>${escapeHtml(header.toUpperCase())}</span>${renderOptionButtons(`formField_${index}`, optionValue, statusOptions)}</label>`;
+            return `<label class="wide-field"><span>${labelText}</span>${renderOptionButtons(`formField_${index}`, optionValue, statusOptions)}</label>`;
         }
         if (currentModule === "CONG_NO" && header === "npp") {
-            return `<label><span>NPP</span><select id="formField_${index}">
+            return `<label><span>${labelText}</span><select id="formField_${index}">
                 <option value=""></option>
                 ${nppOptions.map(item => `<option value="${escapeHtml(item.id)}" ${String(rawValue) === item.id ? "selected" : ""}>${escapeHtml(item.id)}${item.ten ? ` - ${escapeHtml(item.ten)}` : ""}</option>`).join("")}
             </select></label>`;
         }
-        if (textareaHeaders.includes(header)) {
-            return `<label class="wide-field"><span>${escapeHtml(header.toUpperCase())}</span><textarea id="formField_${index}" rows="4">${value}</textarea></label>`;
+        if (isTextareaHeader(header, currentModule)) {
+            return `<label class="wide-field"><span>${labelText}</span><textarea id="formField_${index}" rows="4">${value}</textarea></label>`;
         }
         if (currentModule === "NPP" && header === "hoa_hong") {
-            return `<label><span>HOA_HONG (%)</span><input id="formField_${index}" type="number" min="0.001" max="100" step="0.001" value="${value}"></label>`;
+            return `<label><span>${labelText} (%)</span><input id="formField_${index}" type="number" min="0.001" max="100" step="0.001" value="${value}"></label>`;
         }
         if (currentModule === "CONG_NO" && header === "so_tien") {
-            return `<label><span>SO_TIEN</span><input id="formField_${index}" type="number" min="0" step="1" value="${value}"></label>`;
+            return `<label><span>${labelText}</span><input id="formField_${index}" type="number" min="0" step="1" value="${value}"></label>`;
         }
-        const type = header.includes("ngay") ? "date" : "text";
+        if (currentModule === "DS_SP" && header === "thuong_hieu") {
+            return `<label><span>${labelText}</span><input id="formField_${index}" type="text" list="dsSpBrandList" value="${value}" placeholder="Nhập hoặc chọn thương hiệu..."></label>`;
+        }
+        const type = colType === "date" ? "date" : "text";
         const readonly = (currentModule === "DON_HANG" && header === "thanh_tien") || (currentModule === "CONG_NO" && header === "cong_no_con_lai") ? "readonly" : "";
-        return `<label><span>${escapeHtml(header.toUpperCase())}</span><input id="formField_${index}" type="${type}" value="${value}" ${readonly}></label>`;
+        return `<label><span>${labelText}</span><input id="formField_${index}" type="${type}" value="${value}" ${readonly}></label>`;
     }).join("");
 }
 
@@ -2129,18 +2749,19 @@ async function saveDonHangForm() {
         return;
     }
 
+    const headers = getHeaders("DON_HANG");
+    const idSpIdx = headers.indexOf("id_sp");
+    const slgIdx = headers.indexOf("slg");
     const rows = [...document.querySelectorAll("#donHangItemsBody tr")].map(item => {
-        const id = String(item.querySelector('[data-order-field="id"]')?.value || "").trim() || generateNextId();
-        const idSp = String(item.querySelector('[data-order-field="id_sp"]')?.value || "").trim();
-        const ten = String(item.querySelector('[data-order-field="ten"]')?.value || "").trim();
-        const donGia = String(item.querySelector('[data-order-field="don_gia"]')?.value || "").trim();
-        const slg = String(item.querySelector('[data-order-field="slg"]')?.value || "").trim();
-        const thanhTien = String(item.querySelector('[data-order-field="thanh_tien"]')?.value || "").trim();
-        const chietKhau = String(item.querySelector('[data-order-field="chiet_khau"]')?.value || "").trim();
-        const tienChietKhau = String(item.querySelector('[data-order-field="tien_chiet_khau"]')?.value || "").trim();
-        const tienHang = String(item.querySelector('[data-order-field="tien_hang"]')?.value || "").trim();
-        return [id, ngay, mdh, npp, idSp, ten, donGia, slg, thanhTien, chietKhau, tienChietKhau, tienHang];
-    }).filter(row => row[4] && parseMoney(row[7]) > 0);
+        const fieldVal = name => String(item.querySelector(`[data-order-field="${name}"]`)?.value || "").trim();
+        return headers.map(h => {
+            if (h === "id") return fieldVal("id") || generateNextId();
+            if (h === "ngay") return ngay;
+            if (h === "mdh") return mdh;
+            if (h === "npp") return npp;
+            return fieldVal(h);
+        });
+    }).filter(row => row[idSpIdx] && parseMoney(row[slgIdx]) > 0);
 
     if (!rows.length) {
         alert("Vui lòng thêm ít nhất một sản phẩm và nhập số lượng.");
@@ -2271,15 +2892,392 @@ async function processFiles(files) {
     }
 }
 
+function slugifyColumnKey(text) {
+    return String(text || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "d")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+
+function getCustomizableModules() {
+    return MODULE_ORDER.filter(m => CONFIG.modules[m] && !CONFIG.modules[m].hidden && !CONFIG.modules[m].reportOnly);
+}
+
+function openColumnConfigModal(targetModule = null, focusHeader = null) {
+    const customizable = getCustomizableModules();
+    const initialMod = targetModule && customizable.includes(targetModule)
+        ? targetModule
+        : (customizable.includes(currentModule) ? currentModule : "DS_SP");
+    columnConfigEditingModule = initialMod;
+
+    const selectEl = document.getElementById("columnConfigModuleSelect");
+    if (selectEl) {
+        selectEl.innerHTML = customizable.map(m => `
+            <option value="${escapeHtml(m)}" ${m === initialMod ? "selected" : ""}>Module: ${escapeHtml(CONFIG.modules[m].label)}</option>
+        `).join("");
+    }
+    renderColumnConfigTable(initialMod, focusHeader);
+    document.getElementById("columnConfigModal").classList.add("active");
+    lucide.createIcons();
+}
+
+function switchColumnConfigModule(moduleName) {
+    columnConfigEditingModule = moduleName;
+    renderColumnConfigTable(moduleName);
+    lucide.createIcons();
+}
+
+let draggedColConfigRow = null;
+
+function onColConfigRowMouseDown(event, tr) {
+    if (event.target.closest("input, select, button, textarea")) {
+        tr.draggable = false;
+    } else {
+        tr.draggable = true;
+    }
+}
+
+function onColConfigDragStart(event, tr) {
+    if (!tr.draggable) {
+        event.preventDefault();
+        return;
+    }
+    draggedColConfigRow = tr;
+    tr.classList.add("col-config-dragging");
+    if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        try {
+            event.dataTransfer.setData("text/plain", tr.dataset.origKey || "");
+        } catch (_) { }
+    }
+}
+
+function onColConfigDragOver(event, tr) {
+    event.preventDefault();
+    if (!draggedColConfigRow || draggedColConfigRow === tr) return;
+    const tbody = tr.parentElement;
+    if (!tbody) return;
+    const rect = tr.getBoundingClientRect();
+    const isAfter = (event.clientY - rect.top) > rect.height / 2;
+    if (isAfter) {
+        tbody.insertBefore(draggedColConfigRow, tr.nextElementSibling);
+    } else {
+        tbody.insertBefore(draggedColConfigRow, tr);
+    }
+}
+
+function onColConfigDrop(event) {
+    event.preventDefault();
+}
+
+function onColConfigDragEnd(event, tr) {
+    tr.classList.remove("col-config-dragging");
+    tr.draggable = false;
+    draggedColConfigRow = null;
+}
+
+function setColumnAlignValue(btn, alignVal) {
+    const group = btn.closest(".col-align-group");
+    if (!group) return;
+    group.dataset.alignValue = alignVal;
+    group.querySelectorAll(".col-align-btn").forEach(b => b.classList.toggle("active", b === btn));
+}
+
+function renderColumnConfigRowHtml(item) {
+    const { key, origKey, label, type, width, align = "left", visible, lockedKey, virtualOnly } = item;
+    return `
+        <tr data-orig-key="${escapeHtml(origKey || "")}" data-virtual="${virtualOnly ? "1" : "0"}"
+            onmousedown="onColConfigRowMouseDown(event, this)"
+            ondragstart="onColConfigDragStart(event, this)"
+            ondragover="onColConfigDragOver(event, this)"
+            ondrop="onColConfigDrop(event, this)"
+            ondragend="onColConfigDragEnd(event, this)">
+            <td style="text-align:center;">
+                <span class="col-drag-handle" title="Kéo thả lên/xuống để sắp xếp vị trí cột">
+                    <i data-lucide="grip-vertical" style="width:16px;"></i>
+                </span>
+            </td>
+            <td style="text-align:center;">
+                <input type="checkbox" data-col-field="visible" ${visible ? "checked" : ""}>
+            </td>
+            <td>
+                <input type="text" data-col-field="key" value="${escapeHtml(key)}" ${lockedKey || virtualOnly ? "readonly" : ""} placeholder="vd: thuong_hieu" required>
+            </td>
+            <td>
+                <input type="text" data-col-field="label" value="${escapeHtml(label)}" placeholder="Tên hiển thị..." oninput="onColumnLabelInput(this)">
+            </td>
+            <td>
+                <select data-col-field="type" ${virtualOnly ? "disabled" : ""}>
+                    <option value="text" ${type === "text" ? "selected" : ""}>Văn bản (Text)</option>
+                    <option value="number" ${type === "number" ? "selected" : ""}>Số / Tiền tệ</option>
+                    <option value="date" ${type === "date" ? "selected" : ""}>Ngày tháng</option>
+                    <option value="textarea" ${type === "textarea" ? "selected" : ""}>Đoạn văn dài</option>
+                </select>
+            </td>
+            <td>
+                <input type="number" data-col-field="width" value="${width ? escapeHtml(width) : ""}" min="50" max="1200" step="5" placeholder="Tự động">
+            </td>
+            <td style="text-align:center;">
+                <div class="col-align-group" data-col-field="align" data-align-value="${escapeHtml(align)}">
+                    <button type="button" class="col-align-btn ${align === "left" ? "active" : ""}" onclick="setColumnAlignValue(this, 'left')" title="Căn trái">
+                        <i data-lucide="align-left" style="width:15px;"></i>
+                    </button>
+                    <button type="button" class="col-align-btn ${align === "center" ? "active" : ""}" onclick="setColumnAlignValue(this, 'center')" title="Căn giữa">
+                        <i data-lucide="align-center" style="width:15px;"></i>
+                    </button>
+                    <button type="button" class="col-align-btn ${align === "right" ? "active" : ""}" onclick="setColumnAlignValue(this, 'right')" title="Căn phải">
+                        <i data-lucide="align-right" style="width:15px;"></i>
+                    </button>
+                </div>
+            </td>
+            <td>
+                <div class="column-config-row-actions">
+                    <button type="button" class="icon-btn" onclick="moveColumnConfigRow(this, -1)" title="Chuyển lên">
+                        <i data-lucide="arrow-up" style="width:15px;"></i>
+                    </button>
+                    <button type="button" class="icon-btn" onclick="moveColumnConfigRow(this, 1)" title="Chuyển xuống">
+                        <i data-lucide="arrow-down" style="width:15px;"></i>
+                    </button>
+                    <button type="button" class="icon-btn" onclick="removeColumnConfigRow(this)" title="${lockedKey || virtualOnly ? "Cột mặc định hệ thống" : "Xóa cột"}" ${lockedKey || virtualOnly ? "disabled style='opacity:0.35;cursor:not-allowed;'" : ""}>
+                        <i data-lucide="trash-2" style="width:15px;"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function renderColumnConfigTable(moduleName, focusHeader = null) {
+    const colCfg = getModuleColumnConfig(moduleName);
+    const hiddenSet = new Set(colCfg.hiddenHeaders);
+    const rows = colCfg.headers.map(h => ({
+        key: h,
+        origKey: h,
+        label: getHeaderLabel(h, moduleName),
+        type: getColumnType(h, moduleName),
+        width: getColumnWidth(h, moduleName),
+        align: getColumnAlign(h, moduleName),
+        visible: !hiddenSet.has(h),
+        lockedKey: h === "id",
+        virtualOnly: false
+    }));
+    if (moduleName === "DON_HANG") {
+        rows.push({
+            key: "tong_tien",
+            origKey: "tong_tien",
+            label: getHeaderLabel("tong_tien", "DON_HANG"),
+            type: "number",
+            width: getColumnWidth("tong_tien", "DON_HANG"),
+            align: getColumnAlign("tong_tien", "DON_HANG"),
+            visible: !hiddenSet.has("tong_tien"),
+            lockedKey: true,
+            virtualOnly: true
+        });
+    }
+    const tbody = document.getElementById("columnConfigBody");
+    if (!tbody) return;
+    tbody.innerHTML = rows.map(renderColumnConfigRowHtml).join("");
+    if (focusHeader) {
+        requestAnimationFrame(() => {
+            const targetRow = [...tbody.querySelectorAll("tr")].find(tr => tr.dataset.origKey === focusHeader);
+            const labelInput = targetRow?.querySelector('[data-col-field="label"]');
+            if (labelInput) {
+                labelInput.focus();
+                labelInput.select();
+            }
+        });
+    }
+}
+
+function onColumnLabelInput(labelInput) {
+    const tr = labelInput.closest("tr");
+    if (!tr || tr.dataset.origKey) return;
+    const keyInput = tr.querySelector('[data-col-field="key"]');
+    if (keyInput && !keyInput.dataset.manualEdited) {
+        keyInput.value = slugifyColumnKey(labelInput.value);
+    }
+}
+
+function addColumnConfigRow() {
+    const tbody = document.getElementById("columnConfigBody");
+    if (!tbody) return;
+    const html = renderColumnConfigRowHtml({
+        key: "",
+        origKey: "",
+        label: "",
+        type: "text",
+        width: null,
+        align: "left",
+        visible: true,
+        lockedKey: false,
+        virtualOnly: false
+    });
+    tbody.insertAdjacentHTML("beforeend", html);
+    const lastRow = tbody.lastElementChild;
+    const keyInput = lastRow?.querySelector('[data-col-field="key"]');
+    if (keyInput) {
+        keyInput.addEventListener("input", () => {
+            keyInput.dataset.manualEdited = "1";
+        });
+    }
+    lastRow?.querySelector('[data-col-field="label"]')?.focus();
+    lucide.createIcons();
+}
+
+function moveColumnConfigRow(button, delta) {
+    const row = button.closest("tr");
+    const tbody = row?.parentElement;
+    if (!row || !tbody) return;
+    if (delta < 0 && row.previousElementSibling) {
+        tbody.insertBefore(row, row.previousElementSibling);
+    } else if (delta > 0 && row.nextElementSibling) {
+        tbody.insertBefore(row.nextElementSibling, row);
+    }
+}
+
+function removeColumnConfigRow(button) {
+    const row = button.closest("tr");
+    if (!row) return;
+    const key = row.querySelector('[data-col-field="key"]')?.value || "";
+    if (key === "id" || row.dataset.virtual === "1") return;
+    if (key && !confirm(`Bạn có chắc muốn xóa cột "${key}" khỏi module ${CONFIG.modules[columnConfigEditingModule]?.label}?`)) return;
+    row.remove();
+}
+
+async function resetColumnConfigDefault() {
+    const mod = columnConfigEditingModule;
+    const label = CONFIG.modules[mod]?.label || mod;
+    if (!confirm(`Khôi phục cấu hình các cột của module "${label}" về mặc định ban đầu?`)) return;
+    delete customColumnConfigs[mod];
+    saveStoredColumnConfigs();
+    renderColumnConfigTable(mod);
+    if (currentModule === mod) {
+        renderHeaders();
+        renderTable();
+    }
+    lucide.createIcons();
+}
+
+function closeColumnConfigModal() {
+    document.getElementById("columnConfigModal")?.classList.remove("active");
+}
+
+async function saveColumnConfigForm(event) {
+    event.preventDefault();
+    const mod = columnConfigEditingModule;
+    const tbody = document.getElementById("columnConfigBody");
+    if (!tbody || !mod) return;
+
+    const trs = [...tbody.querySelectorAll("tr")];
+    const headers = [];
+    const hiddenHeaders = [];
+    const labels = {};
+    const types = {};
+    const widths = {};
+    const aligns = {};
+    const renameMap = new Map();
+    const seenKeys = new Set();
+
+    for (const tr of trs) {
+        const isVirtual = tr.dataset.virtual === "1";
+        const origKey = String(tr.dataset.origKey || "").trim();
+        const rawKey = String(tr.querySelector('[data-col-field="key"]')?.value || "").trim();
+        const key = isVirtual ? origKey : (slugifyColumnKey(rawKey) || rawKey);
+        const label = String(tr.querySelector('[data-col-field="label"]')?.value || "").trim();
+        const type = String(tr.querySelector('[data-col-field="type"]')?.value || "text").trim();
+        const rawWidth = Number(tr.querySelector('[data-col-field="width"]')?.value || 0);
+        const align = String(tr.querySelector('[data-col-field="align"]')?.dataset.alignValue || "left").trim();
+        const visible = Boolean(tr.querySelector('[data-col-field="visible"]')?.checked);
+
+        if (!key) {
+            alert("Mã cột không được để trống.");
+            return;
+        }
+        if (seenKeys.has(key)) {
+            alert(`Mã cột "${key}" bị trùng lặp. Vui lòng đặt mã cột khác nhau.`);
+            return;
+        }
+        seenKeys.add(key);
+
+        if (!isVirtual) {
+            headers.push(key);
+            types[key] = type;
+            if (origKey && origKey !== key) {
+                renameMap.set(key, origKey);
+            }
+        }
+        if (!visible) hiddenHeaders.push(key);
+        if (label) {
+            labels[key] = label;
+        }
+        if (Number.isFinite(rawWidth) && rawWidth >= 40) {
+            widths[key] = Math.round(rawWidth);
+        }
+        if (["left", "center", "right"].includes(align)) {
+            aligns[key] = align;
+        }
+    }
+
+    if (!headers.includes("id")) {
+        headers.unshift("id");
+        if (!hiddenHeaders.includes("id")) hiddenHeaders.push("id");
+    }
+
+    const defHeaders = getDefaultModuleConfig(mod).headers || [];
+    const removedDefaultHeaders = defHeaders.filter(h => !headers.includes(h));
+
+    customColumnConfigs[mod] = {
+        headers,
+        hiddenHeaders,
+        labels,
+        types,
+        widths,
+        aligns,
+        removedDefaultHeaders
+    };
+    saveStoredColumnConfigs();
+
+    showLoading(`Đang lưu và đồng bộ cột cho ${CONFIG.modules[mod]?.label || mod}...`);
+    try {
+        await syncModuleHeadersToSheet(mod, headers, renameMap);
+        if (mod === "DS_SP") await loadDsSpOptions();
+        if (mod === "NPP") await loadNppOptions();
+        closeColumnConfigModal();
+        if (currentModule === mod) {
+            await renderFilterPanel();
+            await fetchData();
+        } else {
+            renderHeaders();
+            renderTable();
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Không đồng bộ được cấu hình cột lên Google Sheets: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
 function initModalDismiss() {
     const modalMask = document.getElementById("productModal");
     modalMask.addEventListener("mousedown", event => {
         if (event.target === modalMask) closeProductForm();
     });
+    const colModalMask = document.getElementById("columnConfigModal");
+    colModalMask?.addEventListener("mousedown", event => {
+        if (event.target === colModalMask) closeColumnConfigModal();
+    });
     document.addEventListener("mousedown", event => {
-        if (!modalMask.classList.contains("active")) return;
-        if (event.target.closest(".modal")) return;
-        closeProductForm();
+        if (modalMask.classList.contains("active") && !event.target.closest(".modal")) {
+            closeProductForm();
+        }
+        if (colModalMask?.classList.contains("active") && !event.target.closest(".modal")) {
+            closeColumnConfigModal();
+        }
     });
 }
 
