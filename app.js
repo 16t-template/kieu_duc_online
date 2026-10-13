@@ -232,6 +232,14 @@ function escapeJsString(value) {
         .replace(/\n/g, "\\n");
 }
 
+function safeCreateIcons() {
+    try {
+        if (typeof lucide !== "undefined" && lucide && typeof lucide.createIcons === "function") {
+            lucide.createIcons();
+        }
+    } catch (_) { }
+}
+
 function colName(index) {
     let name = "";
     let num = index + 1;
@@ -614,6 +622,8 @@ async function buildBaoCaoData() {
     const toTime = filterDateTo ? new Date(`${filterDateTo}T23:59:59`).getTime() : 0;
     const skuSet = new Set();
     const nppSales = new Map();
+    const lkNppSales = new Map();
+    const fsNppSales = new Map();
     const brandSales = new Map();
     const allBrandSales = new Map();
     const allMonthlySales = new Map();
@@ -674,6 +684,24 @@ async function buildBaoCaoData() {
                 allMonthlySales.set(monthStr, (allMonthlySales.get(monthStr) || 0) + sales);
             }
         }
+
+        // Track NPP sales per brand (Lock&King vs Fivestar)
+        const isFsRow = isFivestarBrand(brand);
+        const targetBrandNppMap = isFsRow ? fsNppSales : lkNppSales;
+        if (!targetBrandNppMap.has(npp)) {
+            targetBrandNppMap.set(npp, {
+                npp,
+                nppName: nppNameById.get(npp) || "",
+                hoaHong: nppCommissionById.get(npp) || "",
+                sales: 0,
+                quantity: 0,
+                orders: new Set()
+            });
+        }
+        const bNppEntry = targetBrandNppMap.get(npp);
+        bNppEntry.sales += sales;
+        bNppEntry.quantity += quantity;
+        if (mdh) bNppEntry.orders.add(mdh);
 
         if (filterBrand && brand.toLowerCase() !== filterBrand) return;
 
@@ -791,6 +819,20 @@ async function buildBaoCaoData() {
 
     const allBrandRows = [...allBrandSales.values()].sort((a, b) => b.sales - a.sales || a.brand.localeCompare(b.brand, "vi"));
 
+    const lkNppRows = [...lkNppSales.values()]
+        .map(entry => ({
+            ...entry,
+            orderCount: entry.orders.size
+        }))
+        .sort((a, b) => b.sales - a.sales);
+
+    const fsNppRows = [...fsNppSales.values()]
+        .map(entry => ({
+            ...entry,
+            orderCount: entry.orders.size
+        }))
+        .sort((a, b) => b.sales - a.sales);
+
     return {
         totalSales,
         totalQuantity,
@@ -799,6 +841,8 @@ async function buildBaoCaoData() {
         allBrandsTotalSales,
         bestNpp: nppRowsReport[0] || null,
         nppRows: nppRowsReport,
+        lkNppRows,
+        fsNppRows,
         brandRows: brandRowsReport,
         allBrandRows,
         allBrandSales,
@@ -824,7 +868,7 @@ function renderTabs() {
         </button>
     `;
         }).join("");
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function updateModuleTitle() {
@@ -866,7 +910,7 @@ function updateBulkDeleteButton() {
     btn.style.display = show ? "flex" : "none";
     if (show) {
         btn.innerHTML = `<i data-lucide="trash-2" style="width:18px;"></i> Xóa đã chọn (${selectedSheetRows.size})`;
-        lucide.createIcons();
+        safeCreateIcons();
     }
 }
 
@@ -1086,7 +1130,7 @@ async function renderFilterPanel() {
                 ${congViecView === "kanban" ? "Xem bảng" : "Xem kanban"}
             </button>
         `;
-        lucide.createIcons();
+        safeCreateIcons();
         return;
     }
     if (currentModule === "DS_SP") {
@@ -1563,7 +1607,7 @@ function renderHeaders() {
         }).join("")}
     </tr>`;
     syncSelectAllCheckbox();
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function renderTable() {
@@ -1700,6 +1744,11 @@ function getSalesCommissionBreakdown(totalSales) {
     };
 }
 
+function isFivestarBrand(brandName) {
+    const s = slugifyColumnKey(brandName || "");
+    return s.includes("fivestar") || s.includes("five_star");
+}
+
 function renderBaoCao() {
     document.getElementById("reportView")?.remove();
     const data = reportData || { totalSales: 0, totalQuantity: 0, totalCommission: 0, totalSku: 0, allBrandsTotalSales: 0, bestNpp: null, nppRows: [], brandRows: [], allBrandRows: [], allBrandSales: new Map(), allMonthlySales: new Map(), skuRows: [], monthlyCollectedDebtRows: [], dateRows: [] };
@@ -1710,36 +1759,92 @@ function renderBaoCao() {
     const skuPageRows = (data.skuRows || []).slice((reportSkuPage - 1) * skuPageSize, reportSkuPage * skuPageSize);
     
     const activeBrand = reportCommissionSelectedBrand || "ALL";
-    let monthlySales = new Map();
-    if (activeBrand === "ALL") {
-        if (data.allMonthlySales && data.allMonthlySales.size) {
-            monthlySales = new Map(data.allMonthlySales);
-        } else {
-            (data.dateRows || []).forEach(row => {
-                const d = new Date(getDateTime(row.ngay));
-                if (d.getTime() > 0) {
-                    const monthStr = (d.getMonth() + 1).toString().padStart(2, "0") + "/" + d.getFullYear();
-                    monthlySales.set(monthStr, (monthlySales.get(monthStr) || 0) + row.sales);
-                }
-            });
+
+    // Collect all months
+    const allCommissionMonths = new Set();
+    for (const [_, bData] of (data.allBrandSales || new Map()).entries()) {
+        for (const m of bData.monthlySales.keys()) allCommissionMonths.add(m);
+    }
+    if (!allCommissionMonths.size && data.allMonthlySales) {
+        for (const m of data.allMonthlySales.keys()) allCommissionMonths.add(m);
+    }
+    if (!allCommissionMonths.size && (data.dateRows || []).length) {
+        (data.dateRows || []).forEach(row => {
+            const d = new Date(getDateTime(row.ngay));
+            if (d.getTime() > 0) {
+                allCommissionMonths.add(`${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`);
+            }
+        });
+    }
+    const sortedCommissionMonths = [...allCommissionMonths].sort((a, b) => {
+        const [am, ay] = a.split("/");
+        const [bm, by] = b.split("/");
+        return (by - ay) || (bm - am);
+    });
+
+    // Map monthly sales by brand category
+    const monthlyBrandMap = new Map();
+    sortedCommissionMonths.forEach(m => monthlyBrandMap.set(m, { lkSales: 0, fsSales: 0, totalSales: 0 }));
+
+    if (data.allBrandSales && data.allBrandSales.size) {
+        for (const [bName, bData] of data.allBrandSales.entries()) {
+            const isFs = isFivestarBrand(bName);
+            for (const [m, s] of bData.monthlySales.entries()) {
+                if (!monthlyBrandMap.has(m)) monthlyBrandMap.set(m, { lkSales: 0, fsSales: 0, totalSales: 0 });
+                const entry = monthlyBrandMap.get(m);
+                entry.totalSales += s;
+                if (isFs) entry.fsSales += s;
+                else entry.lkSales += s;
+            }
         }
-    } else {
-        const brandEntry = data.allBrandSales?.get(activeBrand);
-        if (brandEntry && brandEntry.monthlySales) {
-            monthlySales = new Map(brandEntry.monthlySales);
+    } else if (data.allMonthlySales && data.allMonthlySales.size) {
+        for (const [m, s] of data.allMonthlySales.entries()) {
+            if (!monthlyBrandMap.has(m)) monthlyBrandMap.set(m, { lkSales: 0, fsSales: 0, totalSales: 0 });
+            const entry = monthlyBrandMap.get(m);
+            entry.totalSales += s;
+            entry.lkSales += s;
         }
     }
 
-    let totalMonthlyCommission = 0;
-    let sum_under524 = 0, sum_524_874 = 0, sum_base874 = 0;
-    let sum_over_1 = 0, sum_over_15 = 0, sum_over_175 = 0, sum_over_185 = 0, sum_over_2 = 0;
-    const monthlyCommissionRows = [];
-    for (const [month, sales] of monthlySales.entries()) {
+    // 1. Fivestar monthly calculation (0.5% fixed)
+    let sumFsSales = 0;
+    let sumFsComm = 0;
+    const fivestarMonthlyRows = sortedCommissionMonths.map(m => {
+        const sales = monthlyBrandMap.get(m)?.fsSales || 0;
+        const commission = sales * 0.005;
+        sumFsSales += sales;
+        sumFsComm += commission;
+        return { month: m, sales, commission };
+    });
+
+    // 2. Lock&King monthly calculation (tiered brackets)
+    let sumLkSales = 0;
+    let sumLkComm = 0;
+    let sumLk_under524 = 0, sumLk_524_874 = 0, sumLk_base874 = 0;
+    let sumLk_over_1 = 0, sumLk_over_15 = 0, sumLk_over_175 = 0, sumLk_over_185 = 0, sumLk_over_2 = 0;
+    const lockKingMonthlyRows = sortedCommissionMonths.map(m => {
+        // If a specific non-fivestar brand was clicked, use only that brand's sales if present
+        let sales = 0;
+        if (activeBrand !== "ALL" && !isFivestarBrand(activeBrand)) {
+            sales = data.allBrandSales?.get(activeBrand)?.monthlySales?.get(m) || 0;
+        } else {
+            sales = monthlyBrandMap.get(m)?.lkSales || 0;
+        }
         const bd = getSalesCommissionBreakdown(sales);
         const commission = bd.total;
-        monthlyCommissionRows.push({ 
-            month, 
-            sales, 
+        sumLkSales += sales;
+        sumLkComm += commission;
+        sumLk_under524 += bd.t_under524;
+        sumLk_524_874 += bd.t_524_874;
+        sumLk_base874 += bd.t_base874;
+        sumLk_over_1 += bd.t_over_1;
+        sumLk_over_15 += bd.t_over_15;
+        sumLk_over_175 += bd.t_over_175;
+        sumLk_over_185 += bd.t_over_185;
+        sumLk_over_2 += bd.t_over_2;
+        return {
+            month: m,
+            sales,
             t_under524: bd.t_under524,
             t_524_874: bd.t_524_874,
             t_base874: bd.t_base874,
@@ -1748,28 +1853,40 @@ function renderBaoCao() {
             t_over_175: bd.t_over_175,
             t_over_185: bd.t_over_185,
             t_over_2: bd.t_over_2,
-            commission 
-        });
-        sum_under524 += bd.t_under524;
-        sum_524_874 += bd.t_524_874;
-        sum_base874 += bd.t_base874;
-        sum_over_1 += bd.t_over_1;
-        sum_over_15 += bd.t_over_15;
-        sum_over_175 += bd.t_over_175;
-        sum_over_185 += bd.t_over_185;
-        sum_over_2 += bd.t_over_2;
-        totalMonthlyCommission += commission;
-    }
-    monthlyCommissionRows.sort((a, b) => {
-        const [am, ay] = a.month.split("/");
-        const [bm, by] = b.month.split("/");
-        return (by - ay) || (bm - am);
+            commission
+        };
     });
 
+    // 3. Combined monthly calculation
+    const combinedMonthlyRows = sortedCommissionMonths.map(m => {
+        const lk = lockKingMonthlyRows.find(r => r.month === m) || { sales: 0, commission: 0 };
+        const fs = fivestarMonthlyRows.find(r => r.month === m) || { sales: 0, commission: 0 };
+        return {
+            month: m,
+            lkSales: lk.sales,
+            lkComm: lk.commission,
+            fsSales: fs.sales,
+            fsComm: fs.commission,
+            totalComm: lk.commission + fs.commission
+        };
+    });
+    const totalAllCommission = sumLkComm + sumFsComm;
+
+    // Determine current display commission in metrics
+    let displayCommissionTitle = "Tổng hoa hồng";
+    let displayCommissionValue = totalAllCommission;
+    if (isFivestarBrand(activeBrand)) {
+        displayCommissionTitle = `Hoa hồng (${activeBrand}: 0.5%)`;
+        displayCommissionValue = sumFsComm;
+    } else if (activeBrand !== "ALL") {
+        displayCommissionTitle = `Hoa hồng (${activeBrand})`;
+        displayCommissionValue = sumLkComm;
+    }
+
     const collectedDebtByMonth = new Map((data.monthlyCollectedDebtRows || []).map(row => [row.month, row.collectedDebt]));
-    const monthlyCollectionMonths = new Set([...monthlySales.keys(), ...collectedDebtByMonth.keys()]);
+    const monthlyCollectionMonths = new Set([...allCommissionMonths, ...collectedDebtByMonth.keys()]);
     const monthlyCollectionRows = [...monthlyCollectionMonths].map(month => {
-        const sales = monthlySales.get(month) || 0;
+        const sales = monthlyBrandMap.get(month)?.totalSales || 0;
         const collectedDebt = collectedDebtByMonth.get(month) || 0;
         return {
             month,
@@ -1788,35 +1905,164 @@ function renderBaoCao() {
     const totalCollectionRate = data.totalSales ? (totalCollectedDebt / data.totalSales) * 100 : 0;
     const formatPercent = value => `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(Number(value) || 0)}%`;
 
-    const chartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
-    const chartTotal = (data.nppRows || []).reduce((sum, row) => sum + row.sales, 0);
-    let chartCursor = 0;
-    const chartSegments = (data.nppRows || []).map((row, index) => {
-        const start = chartCursor;
-        const percent = chartTotal ? (row.sales / chartTotal) * 100 : 0;
-        chartCursor += percent;
+    const lkChartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#26a69a", "#ffca28", "#5c6bc0"];
+    const lkNppList = (data.lkNppRows && data.lkNppRows.length) ? data.lkNppRows : (data.nppRows || []);
+    const lkChartTotal = lkNppList.reduce((sum, row) => sum + row.sales, 0);
+    let lkChartCursor = 0;
+    const lkChartSegments = lkNppList.map((row, index) => {
+        const start = lkChartCursor;
+        const percent = lkChartTotal ? (row.sales / lkChartTotal) * 100 : 0;
+        lkChartCursor += percent;
         return {
             ...row,
-            color: chartColors[index % chartColors.length],
+            color: lkChartColors[index % lkChartColors.length],
             percent,
-            segment: `${chartColors[index % chartColors.length]} ${start}% ${chartCursor}%`
+            segment: `${lkChartColors[index % lkChartColors.length]} ${start}% ${lkChartCursor}%`
         };
     });
 
-    const brandChartColors = ["#4285f4", "#12b886", "#f6a21a", "#ef5350", "#7e57c2", "#00acc1", "#ff7043", "#3949ab", "#8d6e63", "#26a69a"];
-    const brandChartTotal = (data.brandRows || []).reduce((sum, row) => sum + row.sales, 0);
-    let brandChartCursor = 0;
-    const brandChartSegments = (data.brandRows || []).map((row, index) => {
-        const start = brandChartCursor;
-        const percent = brandChartTotal ? (row.sales / brandChartTotal) * 100 : 0;
-        brandChartCursor += percent;
+    const fsChartColors = ["#0284c7", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#06b6d4"];
+    const fsNppList = data.fsNppRows || [];
+    const fsChartTotal = fsNppList.reduce((sum, row) => sum + row.sales, 0);
+    let fsChartCursor = 0;
+    const fsChartSegments = fsNppList.map((row, index) => {
+        const start = fsChartCursor;
+        const percent = fsChartTotal ? (row.sales / fsChartTotal) * 100 : 0;
+        fsChartCursor += percent;
         return {
             ...row,
-            color: brandChartColors[index % brandChartColors.length],
+            color: fsChartColors[index % fsChartColors.length],
             percent,
-            segment: `${brandChartColors[index % brandChartColors.length]} ${start}% ${brandChartCursor}%`
+            segment: `${fsChartColors[index % fsChartColors.length]} ${start}% ${fsChartCursor}%`
         };
     });
+
+    // Helper to render commission table according to active brand
+    let commissionTableHtml = "";
+    if (activeBrand === "ALL") {
+        commissionTableHtml = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tháng</th>
+                        <th>Doanh số Lock&amp;King</th>
+                        <th>Hoa hồng Lock&amp;King (Bậc thang)</th>
+                        <th>Doanh số Fivestar</th>
+                        <th>Hoa hồng Fivestar (0.5%)</th>
+                        <th>Tổng hoa hồng</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${combinedMonthlyRows.map(row => `
+                        <tr>
+                            <td>${escapeHtml(row.month)}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.lkSales))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.lkComm))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.fsSales))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.fsComm))}</td>
+                            <td><strong>${escapeHtml(formatDisplayNumber(row.totalComm))}</strong></td>
+                        </tr>
+                    `).join("") || `<tr><td colspan="6">Chưa có dữ liệu hoa hồng.</td></tr>`}
+                    ${combinedMonthlyRows.length ? `
+                        <tr class="report-total-row">
+                            <td>Tổng cộng</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLkSales))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLkComm))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumFsSales))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumFsComm))}</td>
+                            <td><strong>${escapeHtml(formatDisplayNumber(totalAllCommission))}</strong></td>
+                        </tr>
+                    ` : ""}
+                </tbody>
+            </table>
+        `;
+    } else if (isFivestarBrand(activeBrand)) {
+        commissionTableHtml = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tháng</th>
+                        <th>Doanh số (Fivestar)</th>
+                        <th>Tỷ lệ hoa hồng</th>
+                        <th>Công thức tính</th>
+                        <th>Hoa hồng Fivestar (0.5%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${fivestarMonthlyRows.map(row => `
+                        <tr>
+                            <td>${escapeHtml(row.month)}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                            <td>0.5%</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.sales))} &times; 0.5%</td>
+                            <td><strong>${escapeHtml(formatDisplayNumber(row.commission))}</strong></td>
+                        </tr>
+                    `).join("") || `<tr><td colspan="5">Chưa có dữ liệu hoa hồng Fivestar.</td></tr>`}
+                    ${fivestarMonthlyRows.length ? `
+                        <tr class="report-total-row">
+                            <td>Tổng cộng (Fivestar)</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumFsSales))}</td>
+                            <td>0.5%</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumFsSales))} &times; 0.5%</td>
+                            <td><strong>${escapeHtml(formatDisplayNumber(sumFsComm))}</strong></td>
+                        </tr>
+                    ` : ""}
+                </tbody>
+            </table>
+        `;
+    } else {
+        commissionTableHtml = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tháng</th>
+                        <th>Doanh số (${escapeHtml(activeBrand)})</th>
+                        <th>&lt; 524tr (0%)</th>
+                        <th>524-874tr (0.5%)</th>
+                        <th>Cố định 874tr (1%)</th>
+                        <th>874tr-1.232tỷ (1%)</th>
+                        <th>1.232-1.456tỷ (1.5%)</th>
+                        <th>1.456-1.904tỷ (1.75%)</th>
+                        <th>1.904-2.24tỷ (1.85%)</th>
+                        <th>&gt;= 2.24tỷ (2%)</th>
+                        <th>Hoa hồng</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${lockKingMonthlyRows.map(row => `
+                        <tr>
+                            <td>${escapeHtml(row.month)}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_under524))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_524_874))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_base874))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_over_1))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_over_15))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_over_175))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_over_185))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(row.t_over_2))}</td>
+                            <td><strong>${escapeHtml(formatDisplayNumber(row.commission))}</strong></td>
+                        </tr>
+                    `).join("") || `<tr><td colspan="11">Chưa có dữ liệu hoa hồng cho ${escapeHtml(activeBrand)}.</td></tr>`}
+                    ${lockKingMonthlyRows.length ? `
+                        <tr class="report-total-row">
+                            <td>Tổng cộng (${escapeHtml(activeBrand)})</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLkSales))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_under524))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_524_874))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_base874))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_over_1))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_over_15))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_over_175))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_over_185))}</td>
+                            <td>${escapeHtml(formatDisplayNumber(sumLk_over_2))}</td>
+                            <td><strong>${escapeHtml(formatDisplayNumber(sumLkComm))}</strong></td>
+                        </tr>
+                    ` : ""}
+                </tbody>
+            </table>
+        `;
+    }
 
     const report = document.createElement("section");
     report.id = "reportView";
@@ -1836,24 +2082,27 @@ function renderBaoCao() {
                 <strong>${escapeHtml(formatDisplayNumber(data.totalSku))}</strong>
             </article>
             <article>
-                <span>${activeBrand === "ALL" ? "Tổng hoa hồng" : `Hoa hồng (${escapeHtml(activeBrand)})`}</span>
-                <strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong>
+                <span>${displayCommissionTitle}</span>
+                <strong>${escapeHtml(formatDisplayNumber(displayCommissionValue))}</strong>
             </article>
         </div>
         <div class="report-charts-grid">
-            <section class="report-panel npp-chart-panel">
-                <h2>Biểu đồ doanh số NPP</h2>
+            <section class="report-panel lk-npp-chart-panel">
+                <div class="chart-panel-header">
+                    <h2>Biểu đồ NPP - Lock&amp;King</h2>
+                    <span class="chart-badge lk-badge">Lock&amp;King</span>
+                </div>
                 <div class="sales-chart">
-                    ${chartSegments.length ? `
+                    ${lkChartSegments.length ? `
                         <div class="sales-pie-layout">
-                            <div class="sales-pie" style="background: conic-gradient(${chartSegments.map(item => item.segment).join(", ")});">
+                            <div class="sales-pie" style="background: conic-gradient(${lkChartSegments.map(item => item.segment).join(", ")});">
                                 <div class="sales-pie-center">
-                                    <span>Tổng</span>
-                                    <strong>${escapeHtml(formatDisplayNumber(chartTotal))}</strong>
+                                    <span>Tổng L&amp;K</span>
+                                    <strong>${escapeHtml(formatDisplayNumber(lkChartTotal))}</strong>
                                 </div>
                             </div>
                             <div class="sales-pie-legend">
-                                ${chartSegments.map(item => `
+                                ${lkChartSegments.map(item => `
                                     <div class="sales-pie-legend-item">
                                         <i style="background:${escapeHtml(item.color)}"></i>
                                         <div>
@@ -1864,7 +2113,7 @@ function renderBaoCao() {
                                 `).join("")}
                             </div>
                         </div>
-                    ` : `<div class="report-empty">Chưa có dữ liệu doanh số NPP.</div>`}
+                    ` : `<div class="report-empty">Chưa có dữ liệu NPP Lock&amp;King.</div>`}
                 </div>
             </section>
             <section class="report-panel commission-chart-panel">
@@ -1873,30 +2122,33 @@ function renderBaoCao() {
                     ? `<div class="commission-line-chart"><canvas id="commissionLineChart"></canvas></div>`
                     : `<div class="report-empty">Chưa có dữ liệu theo ngày.</div>`}
             </section>
-            <section class="report-panel brand-chart-panel">
-                <h2>Biểu đồ doanh số Thương hiệu</h2>
+            <section class="report-panel fs-npp-chart-panel">
+                <div class="chart-panel-header">
+                    <h2>Biểu đồ NPP - Fivestar</h2>
+                    <span class="chart-badge fs-badge">Fivestar</span>
+                </div>
                 <div class="sales-chart">
-                    ${brandChartSegments.length ? `
+                    ${fsChartSegments.length ? `
                         <div class="sales-pie-layout">
-                            <div class="sales-pie" style="background: conic-gradient(${brandChartSegments.map(item => item.segment).join(", ")});">
+                            <div class="sales-pie" style="background: conic-gradient(${fsChartSegments.map(item => item.segment).join(", ")});">
                                 <div class="sales-pie-center">
-                                    <span>Tổng</span>
-                                    <strong>${escapeHtml(formatDisplayNumber(brandChartTotal))}</strong>
+                                    <span>Tổng Fivestar</span>
+                                    <strong>${escapeHtml(formatDisplayNumber(fsChartTotal))}</strong>
                                 </div>
                             </div>
                             <div class="sales-pie-legend">
-                                ${brandChartSegments.map(item => `
-                                    <div class="sales-pie-legend-item brand-legend-item" onclick="selectReportCommissionBrand('${escapeJsString(item.brand)}')" title="Bấm để xem hoa hồng của ${escapeHtml(item.brand)}">
+                                ${fsChartSegments.map(item => `
+                                    <div class="sales-pie-legend-item">
                                         <i style="background:${escapeHtml(item.color)}"></i>
                                         <div>
-                                            <strong>${escapeHtml(item.brand)}</strong>
+                                            <strong>${escapeHtml(reportNppName(item))}</strong>
                                             <span>${escapeHtml(formatDisplayNumber(item.sales))} (${item.percent.toFixed(1)}%)</span>
                                         </div>
                                     </div>
                                 `).join("")}
                             </div>
                         </div>
-                    ` : `<div class="report-empty">Chưa có dữ liệu thương hiệu.</div>`}
+                    ` : `<div class="report-empty">Chưa có dữ liệu NPP Fivestar.</div>`}
                 </div>
             </section>
         </div>
@@ -1905,70 +2157,27 @@ function renderBaoCao() {
                 <div class="commission-header-bar">
                     <div class="commission-title-group">
                         <h2>Hoa hồng theo doanh số</h2>
-                        <span class="commission-brand-badge">${activeBrand === "ALL" ? "Tất cả thương hiệu" : escapeHtml(activeBrand)}</span>
+                        <span class="commission-brand-badge">${activeBrand === "ALL" ? "Tổng hợp cả 2 thương hiệu" : (isFivestarBrand(activeBrand) ? `${escapeHtml(activeBrand)} (0.5% &times; Doanh số)` : `${escapeHtml(activeBrand)} (Bậc thang)`)}</span>
                     </div>
                     <div class="commission-brand-filter-pills" role="tablist" aria-label="Lọc thương hiệu tính hoa hồng">
                         <button type="button" class="brand-pill-btn ${activeBrand === 'ALL' ? 'active' : ''}" onclick="selectReportCommissionBrand('ALL')" title="Xem hoa hồng tất cả thương hiệu">
                             <span class="pill-name">Tất cả thương hiệu</span>
                             <span class="pill-val">${escapeHtml(formatDisplayNumber(data.allBrandsTotalSales || data.totalSales))}</span>
                         </button>
-                        ${(data.allBrandRows || []).map(b => `
-                            <button type="button" class="brand-pill-btn ${activeBrand === b.brand ? 'active' : ''}" onclick="selectReportCommissionBrand('${escapeJsString(b.brand)}')" title="Xem hoa hồng thương hiệu ${escapeHtml(b.brand)}">
-                                <span class="pill-name">${escapeHtml(b.brand)}</span>
-                                <span class="pill-val">${escapeHtml(formatDisplayNumber(b.sales))}</span>
-                            </button>
-                        `).join("")}
+                        ${(data.allBrandRows || []).map(b => {
+                            const isFs = isFivestarBrand(b.brand);
+                            const tag = isFs ? "0.5%" : "Bậc thang";
+                            return `
+                                <button type="button" class="brand-pill-btn ${activeBrand === b.brand ? 'active' : ''}" onclick="selectReportCommissionBrand('${escapeJsString(b.brand)}')" title="Xem hoa hồng thương hiệu ${escapeHtml(b.brand)} (${tag})">
+                                    <span class="pill-name">${escapeHtml(b.brand)}</span>
+                                    <span class="pill-val">${escapeHtml(formatDisplayNumber(b.sales))}</span>
+                                </button>
+                            `;
+                        }).join("")}
                     </div>
                 </div>
                 <div class="report-table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Tháng</th>
-                                <th>Doanh số ${activeBrand === "ALL" ? "" : `(${escapeHtml(activeBrand)})`}</th>
-                                <th>&lt; 524tr (0%)</th>
-                                <th>524-874tr (0.5%)</th>
-                                <th>Cố định 874tr (1%)</th>
-                                <th>874tr-1.232tỷ (1%)</th>
-                                <th>1.232-1.456tỷ (1.5%)</th>
-                                <th>1.456-1.904tỷ (1.75%)</th>
-                                <th>1.904-2.24tỷ (1.85%)</th>
-                                <th>&gt;= 2.24tỷ (2%)</th>
-                                <th>Hoa hồng</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${monthlyCommissionRows.map(row => `
-                                <tr>
-                                    <td>${escapeHtml(row.month)}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.sales))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_under524))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_524_874))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_base874))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_1))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_15))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_175))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_185))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(row.t_over_2))}</td>
-                                    <td><strong>${escapeHtml(formatDisplayNumber(row.commission))}</strong></td>
-                                </tr>
-                            `).join("") || `<tr><td colspan="11">Chưa có dữ liệu hoa hồng cho ${escapeHtml(activeBrand === "ALL" ? "tất cả thương hiệu" : activeBrand)}.</td></tr>`}
-                            ${monthlyCommissionRows.length ? `
-                                <tr class="report-total-row">
-                                    <td colspan="2">Tổng cộng (${escapeHtml(activeBrand === "ALL" ? "Tất cả" : activeBrand)})</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_under524))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_524_874))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_base874))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_over_1))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_over_15))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_over_175))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_over_185))}</td>
-                                    <td>${escapeHtml(formatDisplayNumber(sum_over_2))}</td>
-                                    <td><strong>${escapeHtml(formatDisplayNumber(totalMonthlyCommission))}</strong></td>
-                                </tr>
-                            ` : ""}
-                        </tbody>
-                    </table>
+                    ${commissionTableHtml}
                 </div>
             </section>
             <section class="report-panel collection-performance-panel">
@@ -2216,7 +2425,7 @@ function renderPagination() {
             Tiếp <i data-lucide="chevron-right" style="width:16px;"></i>
         </button>
     `;
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function changePage(delta) {
@@ -2500,7 +2709,7 @@ async function openDonHangForm(mdh = null) {
     renderDonHangForm(rows);
     document.getElementById("productModal").classList.add("active");
     document.getElementById("donHangMdh")?.focus();
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function generateQuickMdh() {
@@ -2512,7 +2721,7 @@ function addDonHangItem() {
     const body = document.getElementById("donHangItemsBody");
     const index = body.querySelectorAll("tr").length;
     body.insertAdjacentHTML("beforeend", renderDonHangItemRow([], index));
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function removeDonHangItem(button) {
@@ -2922,13 +3131,13 @@ function openColumnConfigModal(targetModule = null, focusHeader = null) {
     }
     renderColumnConfigTable(initialMod, focusHeader);
     document.getElementById("columnConfigModal").classList.add("active");
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function switchColumnConfigModule(moduleName) {
     columnConfigEditingModule = moduleName;
     renderColumnConfigTable(moduleName);
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 let draggedColConfigRow = null;
@@ -3125,7 +3334,7 @@ function addColumnConfigRow() {
         });
     }
     lastRow?.querySelector('[data-col-field="label"]')?.focus();
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function moveColumnConfigRow(button, delta) {
@@ -3159,7 +3368,7 @@ async function resetColumnConfigDefault() {
         renderHeaders();
         renderTable();
     }
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 function closeColumnConfigModal() {
@@ -3264,7 +3473,7 @@ async function saveColumnConfigForm(event) {
 
 function initModalDismiss() {
     const modalMask = document.getElementById("productModal");
-    modalMask.addEventListener("mousedown", event => {
+    modalMask?.addEventListener("mousedown", event => {
         if (event.target === modalMask) closeProductForm();
     });
     const colModalMask = document.getElementById("columnConfigModal");
@@ -3272,10 +3481,10 @@ function initModalDismiss() {
         if (event.target === colModalMask) closeColumnConfigModal();
     });
     document.addEventListener("mousedown", event => {
-        if (modalMask.classList.contains("active") && !event.target.closest(".modal")) {
+        if (modalMask?.classList?.contains("active") && !event.target.closest(".modal")) {
             closeProductForm();
         }
-        if (colModalMask?.classList.contains("active") && !event.target.closest(".modal")) {
+        if (colModalMask?.classList?.contains("active") && !event.target.closest(".modal")) {
             closeColumnConfigModal();
         }
     });
@@ -3299,15 +3508,19 @@ function clearStoredUser() {
 }
 
 function showLogin() {
-    document.getElementById("authScreen").style.display = "grid";
-    document.querySelector(".app-shell").style.display = "none";
+    const authScreen = document.getElementById("authScreen");
+    if (authScreen) authScreen.style.display = "grid";
+    const appShell = document.querySelector(".app-shell");
+    if (appShell) appShell.style.display = "none";
     hideLoading();
     document.getElementById("loginId")?.focus();
 }
 
 function showApp() {
-    document.getElementById("authScreen").style.display = "none";
-    document.querySelector(".app-shell").style.display = "";
+    const authScreen = document.getElementById("authScreen");
+    if (authScreen) authScreen.style.display = "none";
+    const appShell = document.querySelector(".app-shell");
+    if (appShell) appShell.style.display = "grid";
     renderCurrentUser();
 }
 
@@ -3327,7 +3540,7 @@ function renderCurrentUser() {
             <i data-lucide="log-out" style="width:16px;"></i>
         </button>
     `;
-    lucide.createIcons();
+    safeCreateIcons();
 }
 
 async function loadNhanVienRows() {
@@ -3394,20 +3607,25 @@ async function startApp() {
     updateModuleTitle();
     renderTabs();
     updateModuleActions();
-    lucide.createIcons();
+    safeCreateIcons();
     await renderFilterPanel();
     await fetchData();
 }
 
 async function init() {
-    initModalDismiss();
-    currentUser = getStoredUser();
-    if (currentUser?.id) {
+    try {
+        initModalDismiss();
+        currentUser = getStoredUser();
+        if (currentUser?.id) {
+            showApp();
+            await startApp();
+            return;
+        }
+        showLogin();
+    } catch (err) {
+        console.error("Lỗi khởi tạo:", err);
         showApp();
-        await startApp();
-        return;
     }
-    showLogin();
 }
 
 init();

@@ -617,11 +617,39 @@ button {
     gap: 16px;
 }
 
+.chart-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.chart-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.lk-badge {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+.fs-badge {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+
 @media (max-width: 1280px) {
     .report-charts-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .brand-chart-panel {
+    .fs-npp-chart-panel {
         order: 2;
     }
     .commission-chart-panel {
@@ -643,6 +671,7 @@ button {
     display: contents;
 }
 
+.lk-npp-chart-panel,
 .npp-chart-panel {
     order: 1;
     background: #fff;
@@ -653,6 +682,7 @@ button {
     background: #fff;
 }
 
+.fs-npp-chart-panel,
 .brand-chart-panel {
     order: 3;
     background: #fff;
